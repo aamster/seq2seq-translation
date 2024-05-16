@@ -42,21 +42,27 @@ def get_vocabs(text_pairs: List[Tuple[str]],
     source_lang = spacy.load(source_spacy_language_model_name)
     target_lang = spacy.load(target_spacy_language_model_name)
 
+    specials = [''] * 4
+    specials[PAD_IDX] = '<pad>'
+    specials[BOS_IDX] = '<sos>'
+    specials[EOS_IDX] = '<eos>'
+    specials[UNK_IDX] = '<unk>'
+
     source_vocab = build_vocab_from_iterator(
         get_tokens(spacy_lang=source_lang, text=[x[0] for x in text_pairs]),
         min_freq=2,
-        specials=['<pad>', '<sos>', '<eos>', '<unk>'],
+        specials=specials,
         special_first=True
     )
-    source_vocab.set_default_index(source_vocab['<unk>'])
+    source_vocab.set_default_index(source_vocab[specials[UNK_IDX]])
 
     target_vocab = build_vocab_from_iterator(
         get_tokens(spacy_lang=target_lang, text=[x[1] for x in text_pairs]),
         min_freq=2,
-        specials=['<pad>', '<sos>', '<eos>', '<unk>'],
+        specials=specials,
         special_first=True
     )
-    target_vocab.set_default_index(target_vocab['<unk>'])
+    target_vocab.set_default_index(target_vocab[specials[UNK_IDX]])
     return source_vocab, target_vocab
 
 
@@ -68,9 +74,7 @@ def get_transform(vocab: Vocab):
     text_tranform = T.Sequential(
         ## converts the sentences to indices based on given vocabulary
         T.VocabTransform(vocab=vocab),
-        ## Add <sos> at beginning of each sentence.
         T.AddToken(BOS_IDX, begin=True),
-        ## Add <eos> at beginning of each sentence.
         T.AddToken(EOS_IDX, begin=False),
         T.ToTensor(padding_value=PAD_IDX)
     )
