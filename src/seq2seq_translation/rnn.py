@@ -3,45 +3,74 @@ from typing import Optional
 import torch
 from torch import nn
 import torch.nn.functional as F
+from transformers import T5Model
 
 from seq2seq_translation.attention import BahdanauAttention
-from seq2seq_translation.data_loading import BOS_IDX
 
 
 class EncoderRNN(nn.Module):
-    def __init__(self, input_size, hidden_size=128, embedding_dim=128, dropout_p=0.1, bidirectional: bool = False):
+    def __init__(
+        self,
+        input_size,
+        hidden_size=128,
+        embedding_dim=128,
+        dropout_p=0.1,
+        bidirectional: bool = False,
+        embedding_model: Optional[T5Model] = None,
+        freeze_embedding_layer: bool = False
+    ):
         super(EncoderRNN, self).__init__()
         self.hidden_size = hidden_size
 
-        self.embedding = nn.Embedding(num_embeddings=input_size, embedding_dim=embedding_dim)
+        if embedding_model is not None:
+            self.embedding = nn.Embedding.from_pretrained(
+                embeddings=embedding_model.encoder.embed_tokens.weight,
+                freeze=freeze_embedding_layer
+            )
+            embedding_dim = self.embedding.weight.shape[1]
+        else:
+            self.embedding = nn.Embedding(num_embeddings=input_size, embedding_dim=embedding_dim)
         self.gru = nn.GRU(input_size=embedding_dim, hidden_size=hidden_size, batch_first=True, bidirectional=bidirectional)
         self.dropout = nn.Dropout(dropout_p)
+        self._embedding_model = embedding_model
 
     def forward(self, input):
-        embedded = self.dropout(self.embedding(input))
+        embedded = self.embedding(input)
+        if self._embedding_model is None:
+            embedded = self.dropout(embedded)
         output, hidden = self.gru(embedded)
         return output, hidden
 
 
 class DecoderRNN(nn.Module):
     def __init__(
-            self,
-            hidden_size,
-            output_size,
-            max_len: int,
-            use_context_vector: bool = True,
-            dropout_p=0.1,
-            encoder_bidirectional: bool = False
+        self,
+        hidden_size,
+        output_size,
+        max_len: int,
+        use_context_vector: bool = True,
+        dropout_p=0.1,
+        encoder_bidirectional: bool = False,
+        embedding_model: Optional[T5Model] = None,
+        freeze_embedding_layer: bool = False
     ):
         super(DecoderRNN, self).__init__()
-        self.embedding = nn.Embedding(num_embeddings=output_size, embedding_dim=hidden_size)
+        if embedding_model is not None:
+            self.embedding = nn.Embedding.from_pretrained(
+                embeddings=embedding_model.encoder.embed_tokens.weight,
+                freeze=freeze_embedding_layer
+            )
+            embedding_dim = self.embedding.weight.shape[1]
+        else:
+            embedding_dim = hidden_size
+            self.embedding = nn.Embedding(num_embeddings=output_size, embedding_dim=embedding_dim)
 
         if use_context_vector:
-            gru_input_size = 2 * hidden_size
+            gru_input_size = hidden_size + embedding_dim
             if encoder_bidirectional:
                 gru_input_size += hidden_size
         else:
-            gru_input_size = hidden_size
+            gru_input_size = embedding_dim
 
         if encoder_bidirectional:
             hidden_size *= 2
@@ -51,16 +80,14 @@ class DecoderRNN(nn.Module):
         self._use_context_vector = use_context_vector
         self._encoder_bidirectional = encoder_bidirectional
         self._max_len = max_len
+        self._embedding_model = embedding_model
 
     def forward(self, encoder_hidden, encoder_outputs=None, target_tensor=None):
         decoder_input, decoder_hidden, decoder_outputs = self._initialize_forward(
             encoder_hidden=encoder_hidden
         )
 
-        if target_tensor is not None:
-            T = target_tensor.shape[1]
-        else:
-            T = self._max_len
+        T = target_tensor.shape[1] if target_tensor is not None else self._max_len
         for t in range(T):
             decoder_output, decoder_hidden = self.forward_step(
                 input=decoder_input,
@@ -105,7 +132,7 @@ class DecoderRNN(nn.Module):
             batch_size, 1,
             dtype=torch.long,
             device=torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        ).fill_(BOS_IDX)
+        ).fill_(0)
         return decoder_input, encoder_hidden, []
 
     def forward_step(self, input, hidden, context):
@@ -116,7 +143,9 @@ class DecoderRNN(nn.Module):
         :param context: Encoder h_T (shape B x D x H)
         :return:
         """
-        embedded = self.dropout(self.embedding(input))
+        embedded = self.embedding(input)
+        if self._embedding_model is None:
+            embedded = self.dropout(embedded)
 
         if self._use_context_vector:
             if context.shape[1] != 1:
@@ -132,13 +161,24 @@ class DecoderRNN(nn.Module):
 
 
 class AttnDecoderRNN(DecoderRNN):
-    def __init__(self, hidden_size, output_size, max_len: int, dropout_p=0.1, encoder_bidirectional: bool = False):
+    def __init__(
+        self,
+        hidden_size,
+        output_size,
+        max_len: int,
+        dropout_p=0.1,
+        encoder_bidirectional: bool = False,
+        embedding_model: Optional[T5Model] = None,
+        freeze_embedding_layer: bool = False
+    ):
         super().__init__(
             hidden_size=hidden_size,
             output_size=output_size,
             max_len=max_len,
             dropout_p=dropout_p,
-            encoder_bidirectional=encoder_bidirectional
+            encoder_bidirectional=encoder_bidirectional,
+            embedding_model=embedding_model,
+            freeze_embedding_layer=freeze_embedding_layer
         )
         self.attention = BahdanauAttention(hidden_size=hidden_size, encoder_bidirectional=encoder_bidirectional)
 

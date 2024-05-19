@@ -8,10 +8,9 @@ import torch
 from matplotlib import pyplot as plt
 from torch import optim, nn
 from torch.utils.data import DataLoader
-from torchtext.vocab import Vocab
 from tqdm import tqdm
+from transformers import PreTrainedTokenizer
 
-from seq2seq_translation.data_loading import EOS_IDX
 from seq2seq_translation.rnn import EncoderRNN, AttnDecoderRNN, DecoderRNN
 
 
@@ -75,7 +74,7 @@ def showPlot(train_loss, val_loss):
 
 
 @torch.no_grad()
-def evaluate(encoder, decoder, data_loader: DataLoader, output_vocab: Vocab, criterion,
+def evaluate(encoder, decoder, data_loader: DataLoader, tokenizer: PreTrainedTokenizer, criterion,
              convert_output_to_words: bool = False):
     encoder.eval()
     decoder.eval()
@@ -106,6 +105,10 @@ def evaluate(encoder, decoder, data_loader: DataLoader, output_vocab: Vocab, cri
         batch_size = target_tensor.shape[0]
         C = decoder_outputs.shape[-1]
         T = target_tensor.shape[-1]
+
+        # replace padding token ids of the labels by -100 so it's ignored by the loss
+        target_tensor[target_tensor == tokenizer.pad_token_id] = -100
+
         loss = criterion(
             decoder_outputs[:, :T].reshape(batch_size, C, T),
             target_tensor)
@@ -114,15 +117,8 @@ def evaluate(encoder, decoder, data_loader: DataLoader, output_vocab: Vocab, cri
         if convert_output_to_words:
             _, topi = decoder_outputs.topk(1)
             decoded_ids = topi.squeeze()
+            decoded_sentences = tokenizer.decode(token_ids=decoded_ids, skip_special_tokens=True)
 
-            for batch_id in range(decoded_ids.shape[0]):
-                decoded_words = []
-                for idx in decoded_ids[batch_id]:
-                    if idx.item() == EOS_IDX:
-                        decoded_words.append('<EOS>')
-                        break
-                    decoded_words.append(output_vocab.get_itos(idx.item()))
-                decoded_sentences.append(decoded_words)
     encoder.train()
     decoder.train()
 
@@ -136,7 +132,7 @@ def train(
         encoder,
         decoder,
         n_epochs,
-        output_vocab: Vocab,
+        tokenizer: PreTrainedTokenizer,
         model_weights_out_dir: str,
         learning_rate=0.001,
         weight_decay=0.0
@@ -159,7 +155,7 @@ def train(
             encoder=encoder,
             decoder=decoder,
             data_loader=val_dataloader,
-            output_vocab=output_vocab,
+            tokenizer=tokenizer,
             criterion=criterion
         )
 
