@@ -85,6 +85,10 @@ def evaluate(encoder, decoder, data_loader: DataLoader, tokenizer: PreTrainedTok
     for i, data in enumerate(data_loader):
         input_tensor, target_tensor = data
 
+        if torch.cuda.is_available():
+            input_tensor = input_tensor.cuda()
+            target_tensor = target_tensor.cuda()
+
         encoder_outputs, encoder_hidden = encoder(input_tensor)
 
         if isinstance(decoder, AttnDecoderRNN):

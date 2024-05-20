@@ -13,6 +13,7 @@ class EncoderRNN(nn.Module):
     def __init__(
         self,
         input_size,
+        pad_idx: Optional[int] = None,
         hidden_size=128,
         embedding_dim=128,
         dropout_p=0.1,
@@ -26,7 +27,8 @@ class EncoderRNN(nn.Module):
         if embedding_model is not None:
             self.embedding = nn.Embedding.from_pretrained(
                 embeddings=embedding_model.encoder.embed_tokens.weight,
-                freeze=freeze_embedding_layer
+                freeze=freeze_embedding_layer,
+                padding_idx=pad_idx
             )
             embedding_dim = self.embedding.weight.shape[1]
         else:
@@ -50,6 +52,7 @@ class DecoderRNN(nn.Module):
         output_size,
         max_len: int,
         encoder_hidden_size: int,
+        pad_idx: Optional[int] = None,
         use_context_vector: bool = True,
         dropout_p=0.1,
         embedding_model: Optional[T5Model] = None,
@@ -61,7 +64,8 @@ class DecoderRNN(nn.Module):
         if embedding_model is not None:
             self.embedding = nn.Embedding.from_pretrained(
                 embeddings=embedding_model.encoder.embed_tokens.weight,
-                freeze=freeze_embedding_layer
+                freeze=freeze_embedding_layer,
+                padding_idx=pad_idx
             )
             embedding_dim = self.embedding.weight.shape[1]
         else:
@@ -167,6 +171,7 @@ class AttnDecoderRNN(DecoderRNN):
         max_len: int,
         attention_type: AttentionType,
         encoder_output_size: int,
+        pad_idx: Optional[int] = None,
         attention_size: int = 256,
         dropout_p=0.1,
         encoder_bidirectional: bool = False,
@@ -182,7 +187,8 @@ class AttnDecoderRNN(DecoderRNN):
             freeze_embedding_layer=freeze_embedding_layer,
             context_size=attention_size,
             encoder_hidden_size=(
-                2*encoder_output_size if encoder_bidirectional else encoder_output_size)
+                2*encoder_output_size if encoder_bidirectional else encoder_output_size),
+            pad_idx=pad_idx
         )
         if attention_type == AttentionType.BahdanauAttention:
             self.attention = BahdanauAttention(
