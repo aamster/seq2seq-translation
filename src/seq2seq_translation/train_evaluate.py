@@ -21,6 +21,10 @@ def train_epoch(dataloader, encoder: EncoderRNN, decoder, encoder_optimizer,
     for data in dataloader:
         input_tensor, target_tensor = data
 
+        if torch.cuda.is_available():
+            input_tensor = input_tensor.cuda()
+            target_tensor = target_tensor.cuda()
+
         encoder_optimizer.zero_grad()
         decoder_optimizer.zero_grad()
 
