@@ -14,6 +14,9 @@ from seq2seq_translation.train_evaluate import train
 
 def main(
         data_path: str,
+        encoder_hidden_dim: int,
+        decoder_hidden_dim: int,
+        attention_dim: int,
         encoder_bidirectional: bool,
         batch_size: int,
         model_weights_out_dir: str,
@@ -62,11 +65,9 @@ def main(
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    encoder_hidden_size = 128
-
     encoder = EncoderRNN(
         input_size=len(tokenizer.get_vocab()),
-        hidden_size=encoder_hidden_size,
+        hidden_size=encoder_hidden_dim,
         bidirectional=encoder_bidirectional,
         embedding_model=embedding_model if use_pretrained_embeddings else None,
         freeze_embedding_layer=freeze_embedding_layer
@@ -74,20 +75,20 @@ def main(
 
     if use_attention:
         decoder = AttnDecoderRNN(
-            hidden_size=128,
+            hidden_size=decoder_hidden_dim,
+            attention_size=attention_dim,
             output_size=len(tokenizer.get_vocab()),
             encoder_bidirectional=encoder_bidirectional,
             max_len=max([len(x[1]) for x in train_pairs]),
             embedding_model=embedding_model if use_pretrained_embeddings else None,
             freeze_embedding_layer=freeze_embedding_layer,
             attention_type=attention_type,
-            encoder_output_size=encoder_hidden_size
+            encoder_output_size=encoder_hidden_dim
         ).to(device)
     else:
         decoder = DecoderRNN(
             hidden_size=128,
             output_size=len(tokenizer.get_vocab()),
-            encoder_bidirectional=encoder_bidirectional,
             max_len=max([len(x[1]) for x in train_pairs]),
             embedding_model=embedding_model if use_pretrained_embeddings else None,
             freeze_embedding_layer=freeze_embedding_layer
@@ -117,6 +118,9 @@ if __name__ == '__main__':
     parser.add_argument('--use_pretrained_embeddings', action='store_true', default=False)
     parser.add_argument('--freeze_embedding_layer', action='store_true', default=False)
     parser.add_argument('--attention_type', default='CosineSimilarityAttention')
+    parser.add_argument('--encoder_hidden_dim', default=128, type=int)
+    parser.add_argument('--decoder_hidden_dim', default=256, type=int)
+    parser.add_argument('--attention_dim', default=256, type=int)
 
     args = parser.parse_args()
 
@@ -129,5 +133,8 @@ if __name__ == '__main__':
          max_input_length=args.max_input_length,
          use_pretrained_embeddings=args.use_pretrained_embeddings,
          freeze_embedding_layer=args.freeze_embedding_layer,
-         attention_type=AttentionType(args.attention_type)
+         attention_type=AttentionType(args.attention_type),
+         encoder_hidden_dim=args.encoder_hidden_dim,
+         decoder_hidden_dim=args.decoder_hidden_dim,
+         attention_dim=args.attention_dim
          )

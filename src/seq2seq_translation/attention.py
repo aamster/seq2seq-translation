@@ -49,14 +49,11 @@ class CosineSimilarityAttention(nn.Module):
         :param x: encoder output at each timestep
         :return: attention weights
         """
-        batch_size = x.shape[0]
-
-        query = query.reshape(batch_size, 1, -1)
         keys = self.Wk(x)
         values = self.Wv(x)
 
         Dq = query.shape[-1]
-        scores = query.bmm(keys.permute(0, 2, 1)) / math.sqrt(Dq)
+        scores = query.permute(1, 0, 2).bmm(keys.permute(0, 2, 1)) / math.sqrt(Dq)
         attention = F.softmax(scores, dim=-1)
         Y = attention.bmm(values)
         return Y

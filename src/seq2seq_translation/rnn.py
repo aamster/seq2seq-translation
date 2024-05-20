@@ -49,11 +49,13 @@ class DecoderRNN(nn.Module):
         hidden_size,
         output_size,
         max_len: int,
+        encoder_hidden_size: int,
         use_context_vector: bool = True,
         dropout_p=0.1,
-        encoder_bidirectional: bool = False,
         embedding_model: Optional[T5Model] = None,
-        freeze_embedding_layer: bool = False
+        freeze_embedding_layer: bool = False,
+        embedding_dim: int = 128,
+        context_size: int = 128
     ):
         super(DecoderRNN, self).__init__()
         if embedding_model is not None:
@@ -63,23 +65,18 @@ class DecoderRNN(nn.Module):
             )
             embedding_dim = self.embedding.weight.shape[1]
         else:
-            embedding_dim = hidden_size
             self.embedding = nn.Embedding(num_embeddings=output_size, embedding_dim=embedding_dim)
 
         if use_context_vector:
-            gru_input_size = hidden_size + embedding_dim
-            if encoder_bidirectional:
-                gru_input_size += hidden_size
+            gru_input_size = embedding_dim + context_size
         else:
             gru_input_size = embedding_dim
 
-        if encoder_bidirectional:
-            hidden_size *= 2
         self.gru = nn.GRU(gru_input_size, hidden_size, batch_first=True)
         self.dropout = nn.Dropout(dropout_p)
+        self.Wh = nn.Linear(encoder_hidden_size, hidden_size)
         self.out = nn.Linear(hidden_size, output_size)
         self._use_context_vector = use_context_vector
-        self._encoder_bidirectional = encoder_bidirectional
         self._max_len = max_len
         self._embedding_model = embedding_model
 
@@ -126,15 +123,17 @@ class DecoderRNN(nn.Module):
             y_t = topi.squeeze(-1).detach()  # detach from history as input
         return y_t
 
-    @staticmethod
-    def _initialize_forward(encoder_hidden: torch.Tensor):
+    def _initialize_forward(self, encoder_hidden: torch.Tensor):
         batch_size = encoder_hidden.shape[1]
+
+        decoder_hidden = encoder_hidden.reshape(1, batch_size, -1)
+        decoder_hidden = self.Wh(decoder_hidden)
         decoder_input = torch.empty(
             batch_size, 1,
             dtype=torch.long,
             device=torch.device("cuda" if torch.cuda.is_available() else "cpu")
         ).fill_(0)
-        return decoder_input, encoder_hidden, []
+        return decoder_input, decoder_hidden, []
 
     def forward_step(self, input, hidden, context):
         """
@@ -155,7 +154,6 @@ class DecoderRNN(nn.Module):
         else:
             gru_input = embedded
 
-        hidden = hidden.reshape(1, hidden.shape[1], -1)
         output, hidden = self.gru(gru_input, hidden)
         output = self.out(output)
         return output, hidden
@@ -180,9 +178,11 @@ class AttnDecoderRNN(DecoderRNN):
             output_size=output_size,
             max_len=max_len,
             dropout_p=dropout_p,
-            encoder_bidirectional=encoder_bidirectional,
             embedding_model=embedding_model,
-            freeze_embedding_layer=freeze_embedding_layer
+            freeze_embedding_layer=freeze_embedding_layer,
+            context_size=attention_size,
+            encoder_hidden_size=(
+                2*encoder_output_size if encoder_bidirectional else encoder_output_size)
         )
         if attention_type == AttentionType.BahdanauAttention:
             self.attention = BahdanauAttention(
@@ -193,7 +193,7 @@ class AttnDecoderRNN(DecoderRNN):
             self.attention = CosineSimilarityAttention(
                 encoder_output_size=(
                     2 * encoder_output_size if encoder_bidirectional else encoder_output_size),
-                decoder_hidden_size=2 * hidden_size if encoder_bidirectional else hidden_size,
+                decoder_hidden_size=hidden_size,
                 Dv=attention_size
             )
         else:
@@ -211,7 +211,7 @@ class AttnDecoderRNN(DecoderRNN):
         T = target_tensor.shape[1] if target_tensor is not None else self._max_len
         for t in range(T):
             attention_weights = self.attention(
-                query=decoder_hidden.permute(1, 0, 2),
+                query=decoder_hidden,
                 x=encoder_outputs
             )
             attentions.append(attention_weights)
