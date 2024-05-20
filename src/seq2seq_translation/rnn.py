@@ -5,7 +5,8 @@ from torch import nn
 import torch.nn.functional as F
 from transformers import T5Model
 
-from seq2seq_translation.attention import BahdanauAttention
+from seq2seq_translation.attention import BahdanauAttention, AttentionType, \
+    CosineSimilarityAttention
 
 
 class EncoderRNN(nn.Module):
@@ -140,7 +141,7 @@ class DecoderRNN(nn.Module):
 
         :param input: The previous word or predicted word (shape B x 1)
         :param hidden: Decoder hidden state (h_{t-1}). (shape D x B x H)
-        :param context: Encoder h_T (shape B x D x H)
+        :param context: context vector
         :return:
         """
         embedded = self.embedding(input)
@@ -166,10 +167,13 @@ class AttnDecoderRNN(DecoderRNN):
         hidden_size,
         output_size,
         max_len: int,
+        attention_type: AttentionType,
+        encoder_output_size: int,
+        attention_size: int = 256,
         dropout_p=0.1,
         encoder_bidirectional: bool = False,
         embedding_model: Optional[T5Model] = None,
-        freeze_embedding_layer: bool = False
+        freeze_embedding_layer: bool = False,
     ):
         super().__init__(
             hidden_size=hidden_size,
@@ -180,7 +184,20 @@ class AttnDecoderRNN(DecoderRNN):
             embedding_model=embedding_model,
             freeze_embedding_layer=freeze_embedding_layer
         )
-        self.attention = BahdanauAttention(hidden_size=hidden_size, encoder_bidirectional=encoder_bidirectional)
+        if attention_type == AttentionType.BahdanauAttention:
+            self.attention = BahdanauAttention(
+                hidden_size=hidden_size,
+                encoder_bidirectional=encoder_bidirectional
+            )
+        elif attention_type == AttentionType.CosineSimilarityAttention:
+            self.attention = CosineSimilarityAttention(
+                encoder_output_size=(
+                    2 * encoder_output_size if encoder_bidirectional else encoder_output_size),
+                decoder_hidden_size=2 * hidden_size if encoder_bidirectional else hidden_size,
+                Dv=attention_size
+            )
+        else:
+            raise ValueError(f'Unknown attention type {attention_type}')
 
     def forward(self, encoder_hidden, encoder_outputs=None, target_tensor=None):
         if encoder_outputs is None:
@@ -191,20 +208,27 @@ class AttnDecoderRNN(DecoderRNN):
         )
         attentions = []
 
-        for t in range(self._T):
+        T = target_tensor.shape[1] if target_tensor is not None else self._max_len
+        for t in range(T):
             attention_weights = self.attention(
                 query=decoder_hidden.permute(1, 0, 2),
-                keys=encoder_outputs
+                x=encoder_outputs
             )
             attentions.append(attention_weights)
 
-            decoder_output, decoder_hidden = self.forward_step(
-                input=decoder_input,
-                hidden=decoder_hidden,
-                context=self._get_context(
+            if isinstance(self.attention, BahdanauAttention):
+                context = self._get_context(
                     attn_weights=attention_weights,
                     encoder_outputs=encoder_outputs
                 )
+            elif isinstance(self.attention, CosineSimilarityAttention):
+                context = attention_weights
+            else:
+                raise ValueError(f'Unknown attention {type(self.attention)}')
+            decoder_output, decoder_hidden = self.forward_step(
+                input=decoder_input,
+                hidden=decoder_hidden,
+                context=context
             )
             decoder_outputs.append(decoder_output)
             decoder_input = self._get_y_t(

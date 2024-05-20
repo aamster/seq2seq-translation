@@ -5,6 +5,7 @@ import torch
 from torch.utils.data import DataLoader
 from transformers import T5Tokenizer, T5Model
 
+from seq2seq_translation.attention import AttentionType
 from seq2seq_translation.data_loading import \
     DataSplitter, SentencePairsDataset, CollateFunction
 from seq2seq_translation.rnn import EncoderRNN, DecoderRNN, AttnDecoderRNN
@@ -21,7 +22,8 @@ def main(
         use_attention: bool = False,
         max_input_length: Optional[int] = None,
         use_pretrained_embeddings: bool = False,
-        freeze_embedding_layer: bool = False
+        freeze_embedding_layer: bool = False,
+        attention_type: Optional[AttentionType] = None
 ):
     splitter = DataSplitter(
         data_path=data_path, train_frac=0.8)
@@ -60,9 +62,11 @@ def main(
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+    encoder_hidden_size = 128
+
     encoder = EncoderRNN(
         input_size=len(tokenizer.get_vocab()),
-        hidden_size=128,
+        hidden_size=encoder_hidden_size,
         bidirectional=encoder_bidirectional,
         embedding_model=embedding_model if use_pretrained_embeddings else None,
         freeze_embedding_layer=freeze_embedding_layer
@@ -75,7 +79,9 @@ def main(
             encoder_bidirectional=encoder_bidirectional,
             max_len=max([len(x[1]) for x in train_pairs]),
             embedding_model=embedding_model if use_pretrained_embeddings else None,
-            freeze_embedding_layer=freeze_embedding_layer
+            freeze_embedding_layer=freeze_embedding_layer,
+            attention_type=attention_type,
+            encoder_output_size=encoder_hidden_size
         ).to(device)
     else:
         decoder = DecoderRNN(
@@ -110,12 +116,18 @@ if __name__ == '__main__':
     parser.add_argument('--limit', type=int, default=None)
     parser.add_argument('--use_pretrained_embeddings', action='store_true', default=False)
     parser.add_argument('--freeze_embedding_layer', action='store_true', default=False)
+    parser.add_argument('--attention_type', default='CosineSimilarityAttention')
 
     args = parser.parse_args()
+
+    if not any(args.attention_type == x.value for x in AttentionType):
+        raise ValueError(f'Unknown attention type {args.attention_type}')
+
     main(encoder_bidirectional=args.encoder_bidirectional, batch_size=args.batch_size,
          model_weights_out_dir=args.model_weights_out_dir, n_epochs=args.n_epochs,
          limit=args.limit, use_attention=args.use_attention, data_path=args.data_path,
          max_input_length=args.max_input_length,
          use_pretrained_embeddings=args.use_pretrained_embeddings,
-         freeze_embedding_layer=args.freeze_embedding_layer
+         freeze_embedding_layer=args.freeze_embedding_layer,
+         attention_type=AttentionType(args.attention_type)
          )
