@@ -9,9 +9,9 @@ import torch.nn.functional as F
 class BahdanauAttention(nn.Module):
     def __init__(self, hidden_size, encoder_bidirectional: bool = False):
         super().__init__()
-        D = 2 if encoder_bidirectional else 1
-        self.Wq = nn.Linear(D * hidden_size, hidden_size)
-        self.Wk = nn.Linear(D * hidden_size, hidden_size)
+        # D = 2 if encoder_bidirectional else 1
+        self.Wq = nn.Linear(hidden_size, hidden_size)
+        self.Wk = nn.Linear(hidden_size, hidden_size)
         self.Wv = nn.Linear(hidden_size, 1)
 
     def forward(self, query, x):
@@ -21,8 +21,7 @@ class BahdanauAttention(nn.Module):
         batch_size = x.shape[0]
 
         query = query.reshape(batch_size, 1, -1)
-        keys = self.Wk(x)
-        scores = self.Wv(torch.tanh(self.Wq(query) + keys))
+        scores = self.Wv(torch.tanh(self.Wq(query) + self.Wk(x)))
         scores = scores.squeeze(2).unsqueeze(1)
         weights = F.softmax(scores, dim=-1)
 

@@ -33,8 +33,9 @@ def main(
         learning_rate: float = 1e-3,
         seed: Optional[int] = None
 ):
-    np.random.seed(seed)
-    torch.random.manual_seed(seed)
+    if seed is not None:
+        np.random.seed(seed)
+        torch.random.manual_seed(seed)
 
     if os.environ['USE_WANDB'] == 'True':
         wandb.login()
