@@ -106,7 +106,7 @@ def main(
         decoder = AttnDecoderRNN(
             hidden_size=decoder_hidden_dim,
             attention_size=attention_dim,
-            output_size=embedding_model.encoder.embed_tokens.num_embeddings,
+            output_size=len(tokenizer.get_vocab()),
             encoder_bidirectional=encoder_bidirectional,
             max_len=max_input_length,
             embedding_model=embedding_model if use_pretrained_embeddings else None,
@@ -118,7 +118,7 @@ def main(
     else:
         decoder = DecoderRNN(
             hidden_size=128,
-            output_size=embedding_model.encoder.embed_tokens.num_embeddings,
+            output_size=len(tokenizer.get_vocab()),
             max_len=max_input_length,
             embedding_model=embedding_model if use_pretrained_embeddings else None,
             freeze_embedding_layer=freeze_embedding_layer,
