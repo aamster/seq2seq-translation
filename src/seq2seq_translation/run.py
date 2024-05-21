@@ -36,7 +36,7 @@ def main(
     np.random.seed(seed)
     torch.random.manual_seed(seed)
 
-    if os.environ['USE_WANDB']:
+    if os.environ['USE_WANDB'] == 'True':
         wandb.login()
         wandb.init(
             project="seq2seq_translation",
@@ -161,7 +161,7 @@ if __name__ == '__main__':
     if not any(args.attention_type == x.value for x in AttentionType):
         raise ValueError(f'Unknown attention type {args.attention_type}')
 
-    os.environ['USE_WANDB'] = args.use_wandb
+    os.environ['USE_WANDB'] = str(args.use_wandb)
 
     main(encoder_bidirectional=args.encoder_bidirectional, batch_size=args.batch_size,
          model_weights_out_dir=args.model_weights_out_dir, n_epochs=args.n_epochs,

@@ -185,7 +185,7 @@ def train(
 
         pbar.set_description(desc=f'Train loss {train_loss:3f}\t Val loss {val_loss:3f}')
 
-        if os.environ['USE_WANDB']:
+        if os.environ['USE_WANDB'] == 'True':
             wandb.log({
                 'train_nllloss': train_loss,
                 'val_nllloss': val_loss
