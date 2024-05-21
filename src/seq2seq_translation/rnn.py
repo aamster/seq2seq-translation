@@ -205,16 +205,20 @@ class AttnDecoderRNN(DecoderRNN):
         else:
             raise ValueError(f'Unknown attention type {attention_type}')
 
-    def forward(self, encoder_hidden, encoder_outputs=None, target_tensor=None):
+    def forward(self, encoder_hidden: torch.tensor, encoder_outputs=None, target_tensor=None):
         if encoder_outputs is None:
             raise ValueError(f'encoder outputs must be given for {type(self)}')
 
-        decoder_input, decoder_hidden, decoder_outputs = self._initialize_forward(
+        decoder_input, decoder_hidden, _ = self._initialize_forward(
             encoder_hidden=encoder_hidden
         )
         attentions = []
 
+        batch_size = decoder_input.shape[0]
         T = target_tensor.shape[1] if target_tensor is not None else self._max_len
+        decoder_outputs = torch.zeros(size=(batch_size, T, self.embedding.num_embeddings),
+                                      device=encoder_hidden.device)
+
         for t in range(T):
             attention_weights = self.attention(
                 query=decoder_hidden,
@@ -236,14 +240,13 @@ class AttnDecoderRNN(DecoderRNN):
                 hidden=decoder_hidden,
                 context=context
             )
-            decoder_outputs.append(decoder_output)
             decoder_input = self._get_y_t(
                 decoder_output=decoder_output,
                 target_tensor=target_tensor,
                 t=t
             )
+            decoder_outputs[:, t] = decoder_output.squeeze(1)
 
-        decoder_outputs = torch.cat(decoder_outputs, dim=1)
         decoder_outputs = F.log_softmax(decoder_outputs, dim=-1)
         attentions = torch.cat(attentions, dim=1)
 

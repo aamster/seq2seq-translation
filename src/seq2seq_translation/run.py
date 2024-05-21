@@ -99,16 +99,16 @@ def main(
         bidirectional=encoder_bidirectional,
         embedding_model=embedding_model if use_pretrained_embeddings else None,
         freeze_embedding_layer=freeze_embedding_layer,
-        pad_idx=tokenizer.pad_token_id
+        pad_idx=tokenizer.pad_token_id,
     ).to(device)
 
     if use_attention:
         decoder = AttnDecoderRNN(
             hidden_size=decoder_hidden_dim,
             attention_size=attention_dim,
-            output_size=len(tokenizer.get_vocab()),
+            output_size=embedding_model.encoder.embed_tokens.num_embeddings,
             encoder_bidirectional=encoder_bidirectional,
-            max_len=max([len(x[1]) for x in train_pairs]),
+            max_len=max_input_length,
             embedding_model=embedding_model if use_pretrained_embeddings else None,
             freeze_embedding_layer=freeze_embedding_layer,
             attention_type=attention_type,
@@ -118,8 +118,8 @@ def main(
     else:
         decoder = DecoderRNN(
             hidden_size=128,
-            output_size=len(tokenizer.get_vocab()),
-            max_len=max([len(x[1]) for x in train_pairs]),
+            output_size=embedding_model.encoder.embed_tokens.num_embeddings,
+            max_len=max_input_length,
             embedding_model=embedding_model if use_pretrained_embeddings else None,
             freeze_embedding_layer=freeze_embedding_layer,
             pad_idx=tokenizer.pad_token_id,
