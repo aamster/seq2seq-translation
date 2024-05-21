@@ -154,6 +154,7 @@ if __name__ == '__main__':
     parser.add_argument('--decoder_hidden_dim', default=256, type=int)
     parser.add_argument('--attention_dim', default=256, type=int)
     parser.add_argument('--use_wandb', action='store_true', default=False)
+    parser.add_argument('--seed', type=int, default=None)
 
     args = parser.parse_args()
 
@@ -171,5 +172,6 @@ if __name__ == '__main__':
          attention_type=AttentionType(args.attention_type),
          encoder_hidden_dim=args.encoder_hidden_dim,
          decoder_hidden_dim=args.decoder_hidden_dim,
-         attention_dim=args.attention_dim
+         attention_dim=args.attention_dim,
+         seed=args.seed
          )
