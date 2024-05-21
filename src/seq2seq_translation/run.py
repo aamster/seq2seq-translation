@@ -1,7 +1,10 @@
+import os
 from argparse import ArgumentParser
 from typing import Optional
 
+import numpy as np
 import torch
+import wandb
 from torch.utils.data import DataLoader
 from transformers import T5Tokenizer, T5Model
 
@@ -26,8 +29,32 @@ def main(
         max_input_length: Optional[int] = None,
         use_pretrained_embeddings: bool = False,
         freeze_embedding_layer: bool = False,
-        attention_type: Optional[AttentionType] = None
+        attention_type: Optional[AttentionType] = None,
+        learning_rate: float = 1e-3,
+        seed: Optional[int] = None
 ):
+    np.random.seed(seed)
+    torch.random.manual_seed(seed)
+
+    if os.environ['USE_WANDB']:
+        wandb.login()
+        wandb.init(
+            project="seq2seq_translation",
+            config={
+                "learning_rate": learning_rate,
+                "epochs": n_epochs,
+                "batch_size": batch_size,
+                "encoder_hidden_dim": encoder_hidden_dim,
+                "decoder_hidden_dim": decoder_hidden_dim,
+                "use_attention": use_attention,
+                "attention_dim": attention_dim,
+                "use_pretrained_embeddings": use_pretrained_embeddings,
+                "freeze_embedding_layer": freeze_embedding_layer,
+                "attention_type": attention_type.value,
+                "max_input_length": max_input_length
+            },
+        )
+
     splitter = DataSplitter(
         data_path=data_path, train_frac=0.8)
     train_pairs, test_pairs = splitter.split()
@@ -112,6 +139,7 @@ def main(
 if __name__ == '__main__':
     parser = ArgumentParser()
     parser.add_argument('--data_path', required=True)
+    parser.add_argument('--learning_rate', default=1e-3, type=float)
     parser.add_argument('--max_input_length', type=int, default=None)
     parser.add_argument('--encoder_bidirectional', action='store_true', default=False)
     parser.add_argument('--use_attention', action='store_true', default=False)
@@ -125,11 +153,14 @@ if __name__ == '__main__':
     parser.add_argument('--encoder_hidden_dim', default=128, type=int)
     parser.add_argument('--decoder_hidden_dim', default=256, type=int)
     parser.add_argument('--attention_dim', default=256, type=int)
+    parser.add_argument('--use_wandb', action='store_true', default=False)
 
     args = parser.parse_args()
 
     if not any(args.attention_type == x.value for x in AttentionType):
         raise ValueError(f'Unknown attention type {args.attention_type}')
+
+    os.environ['USE_WANDB'] = args.use_wandb
 
     main(encoder_bidirectional=args.encoder_bidirectional, batch_size=args.batch_size,
          model_weights_out_dir=args.model_weights_out_dir, n_epochs=args.n_epochs,

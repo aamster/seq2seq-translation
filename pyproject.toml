@@ -9,7 +9,9 @@ description = "seq2seq translation"
 dependencies = [
     "torch",
     "torchtext",
-    "spacy"
+    "transformers",
+#    "spacy"
+    "wandb"
 ]
 
 [tool.setuptools.packages.find]

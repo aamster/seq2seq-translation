@@ -5,6 +5,7 @@ from pathlib import Path
 
 import numpy as np
 import torch
+import wandb
 from matplotlib import pyplot as plt
 from torch import optim, nn
 from torch.utils.data import DataLoader
@@ -14,8 +15,14 @@ from transformers import PreTrainedTokenizer
 from seq2seq_translation.rnn import EncoderRNN, AttnDecoderRNN, DecoderRNN
 
 
-def train_epoch(dataloader, encoder: EncoderRNN, decoder, encoder_optimizer,
-          decoder_optimizer, criterion):
+def train_epoch(
+    dataloader,
+    encoder: EncoderRNN,
+    decoder,
+    encoder_optimizer,
+    decoder_optimizer,
+    criterion
+):
 
     total_loss = 0
     for data in dataloader:
@@ -151,14 +158,18 @@ def train(
     decoder_optimizer = optim.Adam(decoder.parameters(), lr=learning_rate, weight_decay=weight_decay)
     criterion = nn.NLLLoss()
 
-    train_losses = np.zeros(n_epochs)
-    val_losses = np.zeros(n_epochs)
-
     best_loss = float('inf')
 
     pbar = tqdm(range(1, n_epochs + 1))
-    for epoch in pbar:
-        train_loss = train_epoch(train_dataloader, encoder, decoder, encoder_optimizer, decoder_optimizer, criterion)
+    for _ in pbar:
+        train_loss = train_epoch(
+            dataloader=train_dataloader,
+            encoder=encoder,
+            decoder=decoder,
+            encoder_optimizer=encoder_optimizer,
+            decoder_optimizer=decoder_optimizer,
+            criterion=criterion,
+        )
         _, val_loss = evaluate(
             encoder=encoder,
             decoder=decoder,
@@ -173,7 +184,9 @@ def train(
             torch.save(decoder.state_dict(), Path(model_weights_out_dir) / 'decoder.pt')
 
         pbar.set_description(desc=f'Train loss {train_loss:3f}\t Val loss {val_loss:3f}')
-        train_losses[epoch-1] = train_loss
-        val_losses[epoch-1] = val_loss
 
-    showPlot(train_loss=train_losses, val_loss=val_losses)
+        if os.environ['USE_WANDB']:
+            wandb.log({
+                'train_nllloss': train_loss,
+                'val_nllloss': val_loss
+            })
