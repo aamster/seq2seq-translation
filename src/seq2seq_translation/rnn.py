@@ -83,6 +83,7 @@ class DecoderRNN(nn.Module):
         self._use_context_vector = use_context_vector
         self._max_len = max_len
         self._embedding_model = embedding_model
+        self._C = output_size
 
     def forward(self, encoder_hidden, encoder_outputs=None, target_tensor=None):
         decoder_input, decoder_hidden, decoder_outputs = self._initialize_forward(
@@ -205,7 +206,8 @@ class AttnDecoderRNN(DecoderRNN):
         else:
             raise ValueError(f'Unknown attention type {attention_type}')
 
-    def forward(self, encoder_hidden: torch.tensor, encoder_outputs=None, target_tensor=None):
+    def forward(self, encoder_hidden: torch.tensor, encoder_outputs=None, target_tensor=None,
+                return_attentions: bool = False):
         if encoder_outputs is None:
             raise ValueError(f'encoder outputs must be given for {type(self)}')
 
@@ -216,7 +218,7 @@ class AttnDecoderRNN(DecoderRNN):
 
         batch_size = decoder_input.shape[0]
         T = target_tensor.shape[1] if target_tensor is not None else self._max_len
-        decoder_outputs = torch.zeros(size=(batch_size, T, self.embedding.num_embeddings),
+        decoder_outputs = torch.zeros(size=(batch_size, T, self._C),
                                       device=encoder_hidden.device)
 
         for t in range(T):
@@ -224,7 +226,8 @@ class AttnDecoderRNN(DecoderRNN):
                 query=decoder_hidden,
                 x=encoder_outputs
             )
-            attentions.append(attention_weights)
+            if return_attentions:
+                attentions.append(attention_weights)
 
             if isinstance(self.attention, BahdanauAttention):
                 context = self._get_context(
@@ -248,7 +251,9 @@ class AttnDecoderRNN(DecoderRNN):
             decoder_outputs[:, t] = decoder_output.squeeze(1)
 
         decoder_outputs = F.log_softmax(decoder_outputs, dim=-1)
-        attentions = torch.cat(attentions, dim=1)
+
+        if return_attentions:
+            attentions = torch.cat(attentions, dim=1)
 
         return decoder_outputs, decoder_hidden, attentions
 

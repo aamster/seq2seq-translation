@@ -10,7 +10,7 @@ from transformers import T5Tokenizer, T5Model
 
 from seq2seq_translation.attention import AttentionType
 from seq2seq_translation.data_loading import \
-    DataSplitter, SentencePairsDataset, CollateFunction
+    DataSplitter, SentencePairsDataset, CollateFunction, read_data, get_target_vocab
 from seq2seq_translation.rnn import EncoderRNN, DecoderRNN, AttnDecoderRNN
 from seq2seq_translation.train_evaluate import train
 
@@ -56,25 +56,36 @@ def main(
             },
         )
 
+    data = read_data(data_path=data_path)
     splitter = DataSplitter(
-        data_path=data_path, train_frac=0.8)
+        data=data, train_frac=0.8)
     train_pairs, test_pairs = splitter.split()
-    if limit is not None:
-        train_pairs = train_pairs[:limit]
-        test_pairs = test_pairs[:limit]
 
     tokenizer = T5Tokenizer.from_pretrained("t5-small")
     embedding_model = T5Model.from_pretrained("t5-small")
 
+    target_vocab, target_vocab_id_tokenizer_id_map = get_target_vocab(
+        data=data,
+        tokenizer=tokenizer
+    )
+
+    if limit is not None:
+        train_pairs = train_pairs[:limit]
+        test_pairs = test_pairs[:limit]
+
     train_dset = SentencePairsDataset(
         data=train_pairs,
         tokenizer=tokenizer,
-        max_length=max_input_length
+        max_length=max_input_length,
+        target_vocab=target_vocab,
+        target_vocab_id_tokenizer_id_map=target_vocab_id_tokenizer_id_map
     )
     val_dset = SentencePairsDataset(
         data=test_pairs,
         tokenizer=tokenizer,
-        max_length=max_input_length
+        max_length=max_input_length,
+        target_vocab=target_vocab,
+        target_vocab_id_tokenizer_id_map=target_vocab_id_tokenizer_id_map
     )
 
     collate_fn = CollateFunction(pad_token_id=tokenizer.pad_token_id)
@@ -106,7 +117,7 @@ def main(
         decoder = AttnDecoderRNN(
             hidden_size=decoder_hidden_dim,
             attention_size=attention_dim,
-            output_size=len(tokenizer.get_vocab()),
+            output_size=len(target_vocab),
             encoder_bidirectional=encoder_bidirectional,
             max_len=max_input_length,
             embedding_model=embedding_model if use_pretrained_embeddings else None,
@@ -118,7 +129,7 @@ def main(
     else:
         decoder = DecoderRNN(
             hidden_size=128,
-            output_size=len(tokenizer.get_vocab()),
+            output_size=len(target_vocab),
             max_len=max_input_length,
             embedding_model=embedding_model if use_pretrained_embeddings else None,
             freeze_embedding_layer=freeze_embedding_layer,

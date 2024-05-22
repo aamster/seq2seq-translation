@@ -26,10 +26,11 @@ def train_epoch(
 
     total_loss = 0
     for data in dataloader:
-        input_tensor, target_tensor = data
+        input_tensor, target_input_tensor, target_tensor = data
 
         if torch.cuda.is_available():
             input_tensor = input_tensor.cuda()
+            target_input_tensor = target_input_tensor.cuda()
             target_tensor = target_tensor.cuda()
 
         encoder_optimizer.zero_grad()
@@ -41,12 +42,12 @@ def train_epoch(
             decoder_outputs, _, _ = decoder(
                 encoder_outputs=encoder_outputs,
                 encoder_hidden=encoder_hidden,
-                target_tensor=target_tensor
+                target_tensor=target_input_tensor
             )
         else:
             decoder_outputs, _ = decoder(
                 encoder_hidden=encoder_hidden,
-                target_tensor=target_tensor
+                target_tensor=target_input_tensor
             )
 
         loss = criterion(
@@ -94,7 +95,7 @@ def evaluate(encoder, decoder, data_loader: DataLoader, tokenizer: PreTrainedTok
     losses = torch.zeros(len(data_loader))
 
     for i, data in enumerate(data_loader):
-        input_tensor, target_tensor = data
+        input_tensor, _, target_tensor = data
 
         if torch.cuda.is_available():
             input_tensor = input_tensor.cuda()
@@ -132,7 +133,7 @@ def evaluate(encoder, decoder, data_loader: DataLoader, tokenizer: PreTrainedTok
         if convert_output_to_words:
             _, topi = decoder_outputs.topk(1)
             decoded_ids = topi.squeeze()
-            decoded_sentences = tokenizer.decode(token_ids=decoded_ids, skip_special_tokens=True)
+            decoded_sentences = tokenizer.decode([data_loader.dataset.target_vocab_id_tokenizer_id_map[x.item()] for x in decoded_ids], skip_special_tokens=True)
 
     encoder.train()
     decoder.train()
