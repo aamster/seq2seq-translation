@@ -52,6 +52,7 @@ class DecoderRNN(nn.Module):
         output_size,
         max_len: int,
         encoder_hidden_size: int,
+        num_embeddings: int,
         pad_idx: Optional[int] = None,
         use_context_vector: bool = True,
         dropout_p=0.1,
@@ -69,7 +70,8 @@ class DecoderRNN(nn.Module):
             )
             embedding_dim = self.embedding.weight.shape[1]
         else:
-            self.embedding = nn.Embedding(num_embeddings=output_size, embedding_dim=embedding_dim)
+            self.embedding = nn.Embedding(num_embeddings=num_embeddings,
+                                          embedding_dim=embedding_dim)
 
         if use_context_vector:
             gru_input_size = embedding_dim + context_size
@@ -172,6 +174,7 @@ class AttnDecoderRNN(DecoderRNN):
         max_len: int,
         attention_type: AttentionType,
         encoder_output_size: int,
+        num_embeddings: int,
         pad_idx: Optional[int] = None,
         attention_size: int = 256,
         dropout_p=0.1,
@@ -189,7 +192,8 @@ class AttnDecoderRNN(DecoderRNN):
             context_size=attention_size,
             encoder_hidden_size=(
                 2*encoder_output_size if encoder_bidirectional else encoder_output_size),
-            pad_idx=pad_idx
+            pad_idx=pad_idx,
+            num_embeddings=num_embeddings
         )
         if attention_type == AttentionType.BahdanauAttention:
             self.attention = BahdanauAttention(

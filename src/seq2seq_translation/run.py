@@ -124,7 +124,8 @@ def main(
             freeze_embedding_layer=freeze_embedding_layer,
             attention_type=attention_type,
             encoder_output_size=encoder_hidden_dim,
-            pad_idx=tokenizer.pad_token_id
+            pad_idx=tokenizer.pad_token_id,
+            num_embeddings=embedding_model.get_input_embeddings().weight.shape[0]
         ).to(device)
     else:
         decoder = DecoderRNN(
@@ -134,7 +135,8 @@ def main(
             embedding_model=embedding_model if use_pretrained_embeddings else None,
             freeze_embedding_layer=freeze_embedding_layer,
             pad_idx=tokenizer.pad_token_id,
-            encoder_hidden_size=encoder_hidden_dim
+            encoder_hidden_size=encoder_hidden_dim,
+            num_embeddings=embedding_model.get_input_embeddings().weight.shape[0]
         ).to(device)
 
     train(
