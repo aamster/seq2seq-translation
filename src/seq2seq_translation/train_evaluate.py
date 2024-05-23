@@ -25,7 +25,7 @@ def train_epoch(
 ):
 
     total_loss = 0
-    for data in dataloader:
+    for data in tqdm(dataloader, total=len(dataloader), desc='train'):
         input_tensor, target_input_tensor, target_tensor = data
 
         if torch.cuda.is_available():
@@ -94,7 +94,7 @@ def evaluate(encoder, decoder, data_loader: DataLoader, tokenizer: PreTrainedTok
     decoded_sentences = []
     losses = torch.zeros(len(data_loader))
 
-    for i, data in enumerate(data_loader):
+    for i, data in tqdm(enumerate(data_loader), total=len(data_loader), desc='eval'):
         input_tensor, _, target_tensor = data
 
         if torch.cuda.is_available():
