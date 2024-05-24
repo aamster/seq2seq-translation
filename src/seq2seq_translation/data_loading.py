@@ -5,7 +5,7 @@ import torch
 from torch.nn.utils.rnn import pad_sequence
 from torch.utils.data import Dataset
 from torchtext.vocab import build_vocab_from_iterator, Vocab
-from transformers import PreTrainedTokenizer, PreTrainedTokenizerFast
+from transformers import PreTrainedTokenizer
 
 
 def read_data(data_path: str):
@@ -30,8 +30,9 @@ class SentencePairsDataset(Dataset):
     ):
         self._data = data
         self._tokenizer = tokenizer
+        self._tokenizer_itos = {v: k for k, v in tokenizer.get_vocab().items()}
         self._max_length = max_length
-        self._target_vocab = target_vocab
+        self._target_vocab_stoi = target_vocab.get_stoi()
         self._target_vocab_id_tokenizer_id_map = target_vocab_id_tokenizer_id_map
 
     def __len__(self):
@@ -59,7 +60,7 @@ class SentencePairsDataset(Dataset):
         source = source.squeeze(0)
         decoder_input = decoder_input.squeeze(0)
 
-        target = torch.tensor([self._target_vocab.get_stoi()[x] for x in self._tokenizer.convert_ids_to_tokens(decoder_input)])
+        target = torch.tensor([self._target_vocab_stoi[x] for x in [self._tokenizer_itos[x.item()] for x in decoder_input]])
 
         return source, decoder_input, target
 
@@ -72,10 +73,6 @@ class SentencePairsDataset(Dataset):
         :return:
         """
         return self._target_vocab_id_tokenizer_id_map
-
-    @property
-    def target_vocab(self) -> Vocab:
-        return self._target_vocab
 
 
 class DataSplitter:
