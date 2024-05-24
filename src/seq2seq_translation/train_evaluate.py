@@ -21,11 +21,12 @@ def train_epoch(
     decoder,
     encoder_optimizer,
     decoder_optimizer,
-    criterion
+    criterion,
+    epoch: int
 ):
 
     total_loss = 0
-    for data in tqdm(dataloader, total=len(dataloader), desc='train'):
+    for data in tqdm(dataloader, total=len(dataloader), desc=f'train epoch {epoch}'):
         input_tensor, target_input_tensor, target_tensor = data
 
         if torch.cuda.is_available():
@@ -161,8 +162,7 @@ def train(
 
     best_loss = float('inf')
 
-    pbar = tqdm(range(1, n_epochs + 1))
-    for _ in pbar:
+    for epoch in range(1, n_epochs + 1):
         train_loss = train_epoch(
             dataloader=train_dataloader,
             encoder=encoder,
@@ -170,6 +170,7 @@ def train(
             encoder_optimizer=encoder_optimizer,
             decoder_optimizer=decoder_optimizer,
             criterion=criterion,
+            epoch=epoch
         )
         _, val_loss = evaluate(
             encoder=encoder,
@@ -184,7 +185,7 @@ def train(
             torch.save(encoder.state_dict(), Path(model_weights_out_dir) / 'encoder.pt')
             torch.save(decoder.state_dict(), Path(model_weights_out_dir) / 'decoder.pt')
 
-        pbar.set_description(desc=f'Train loss {train_loss:3f}\t Val loss {val_loss:3f}')
+        print(f'Train loss {train_loss:3f}\t Val loss {val_loss:3f}')
 
         if os.environ['USE_WANDB'] == 'True':
             wandb.log({
