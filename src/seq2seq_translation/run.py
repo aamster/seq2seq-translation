@@ -137,15 +137,16 @@ def main(
         ).to(device)
     else:
         decoder = DecoderRNN(
-            hidden_size=128,
+            hidden_size=decoder_hidden_dim,
             output_size=len(target_vocab),
             max_len=max_input_length,
             embedding_model=embedding_model if use_pretrained_embeddings else None,
             freeze_embedding_layer=freeze_embedding_layer,
             pad_idx=tokenizer.pad_token_id,
-            encoder_hidden_size=encoder_hidden_dim,
+            encoder_hidden_size=2*encoder_hidden_dim if encoder_bidirectional else encoder_hidden_dim,
             num_embeddings=embedding_model.get_input_embeddings().weight.shape[0],
-            sos_token_id=tokenizer.convert_tokens_to_ids('<sos>')
+            sos_token_id=tokenizer.convert_tokens_to_ids('<sos>'),
+            context_size=2*encoder_hidden_dim if encoder_bidirectional else encoder_hidden_dim
         ).to(device)
 
     if model_weights_path is not None:
