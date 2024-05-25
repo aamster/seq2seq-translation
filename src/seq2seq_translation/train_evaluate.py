@@ -124,8 +124,9 @@ def evaluate(encoder, decoder, data_loader: DataLoader, tokenizer: PreTrainedTok
         T = target_tensor.shape[-1]
 
         loss = criterion(
-            decoder_outputs[:, :T].reshape(batch_size, C, T),
-            target_tensor)
+            decoder_outputs[:, :T].reshape(batch_size * T, C),
+            target_tensor.view(batch_size * T)
+        )
         losses[i] = loss
 
         if convert_output_to_words:
