@@ -136,7 +136,7 @@ class DecoderRNN(nn.Module):
         batch_size = encoder_hidden.shape[1]
 
         decoder_hidden = encoder_hidden.reshape(1, batch_size, -1)
-        decoder_hidden = self.Wh(decoder_hidden)
+        # decoder_hidden = self.Wh(decoder_hidden)
         decoder_input = torch.empty(
             batch_size, 1,
             dtype=torch.long,
