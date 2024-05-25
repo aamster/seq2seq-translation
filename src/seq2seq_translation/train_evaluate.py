@@ -123,9 +123,6 @@ def evaluate(encoder, decoder, data_loader: DataLoader, tokenizer: PreTrainedTok
         C = decoder_outputs.shape[-1]
         T = target_tensor.shape[-1]
 
-        # replace padding token ids of the labels by -100 so it's ignored by the loss
-        target_tensor[target_tensor == tokenizer.pad_token_id] = -100
-
         loss = criterion(
             decoder_outputs[:, :T].reshape(batch_size, C, T),
             target_tensor)
@@ -134,7 +131,7 @@ def evaluate(encoder, decoder, data_loader: DataLoader, tokenizer: PreTrainedTok
         if convert_output_to_words:
             _, topi = decoder_outputs.topk(1)
             decoded_ids = topi.squeeze()
-            decoded_sentences = tokenizer.decode([data_loader.dataset.target_vocab_id_tokenizer_id_map[x.item()] for x in decoded_ids], skip_special_tokens=True)
+            decoded_sentences = tokenizer.batch_decode([data_loader.dataset.target_vocab_id_tokenizer_id_map[x.item()] for x in decoded_ids], skip_special_tokens=True)
 
     encoder.train()
     decoder.train()
@@ -158,7 +155,7 @@ def train(
 
     encoder_optimizer = optim.Adam(encoder.parameters(), lr=learning_rate, weight_decay=weight_decay)
     decoder_optimizer = optim.Adam(decoder.parameters(), lr=learning_rate, weight_decay=weight_decay)
-    criterion = nn.NLLLoss()
+    criterion = nn.NLLLoss(ignore_index=tokenizer.pad_token_id)
 
     best_loss = float('inf')
 

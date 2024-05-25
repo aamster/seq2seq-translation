@@ -134,12 +134,12 @@ def get_target_vocab(
     target = [x[1] for x in data]
 
     target = [tokenizer.encode(x) for x in target]
-    target = [tokenizer.convert_ids_to_tokens(x) for x in target]
+    target = [['<sos>'] + tokenizer.convert_ids_to_tokens(x) for x in target]
 
     vocab = build_vocab_from_iterator(
         iterator=target,
         min_freq=min_freq,
-        specials=[tokenizer.pad_token, tokenizer.eos_token, tokenizer.unk_token]
+        specials=[tokenizer.pad_token, tokenizer.eos_token, tokenizer.unk_token, '<sos>']
     )
 
     new_vocab_id_tokenizer_id_map = {

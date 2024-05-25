@@ -1,10 +1,12 @@
 import os
 from argparse import ArgumentParser
+from pathlib import Path
 from typing import Optional
 
 import numpy as np
 import torch
 import wandb
+from torch import nn
 from torch.utils.data import DataLoader
 from transformers import T5Tokenizer, T5Model
 
@@ -12,7 +14,7 @@ from seq2seq_translation.attention import AttentionType
 from seq2seq_translation.data_loading import \
     DataSplitter, SentencePairsDataset, CollateFunction, read_data, get_target_vocab
 from seq2seq_translation.rnn import EncoderRNN, DecoderRNN, AttnDecoderRNN
-from seq2seq_translation.train_evaluate import train
+from seq2seq_translation.train_evaluate import train, evaluate
 
 
 def main(
@@ -31,7 +33,9 @@ def main(
         freeze_embedding_layer: bool = False,
         attention_type: Optional[AttentionType] = None,
         learning_rate: float = 1e-3,
-        seed: Optional[int] = None
+        seed: Optional[int] = None,
+        model_weights_path: Optional[str] = None,
+        evaluate_only: bool = False
 ):
     if seed is not None:
         np.random.seed(seed)
@@ -62,7 +66,10 @@ def main(
     train_pairs, test_pairs = splitter.split()
 
     tokenizer = T5Tokenizer.from_pretrained("t5-small")
+    tokenizer.add_special_tokens({'additional_special_tokens': ['<sos>']})
+
     embedding_model = T5Model.from_pretrained("t5-small")
+    embedding_model.resize_token_embeddings(len(tokenizer))
 
     target_vocab, target_vocab_id_tokenizer_id_map = get_target_vocab(
         data=data,
@@ -125,7 +132,8 @@ def main(
             attention_type=attention_type,
             encoder_output_size=encoder_hidden_dim,
             pad_idx=tokenizer.pad_token_id,
-            num_embeddings=embedding_model.get_input_embeddings().weight.shape[0]
+            num_embeddings=embedding_model.get_input_embeddings().weight.shape[0],
+            sos_token_id=tokenizer.convert_tokens_to_ids('<sos>')
         ).to(device)
     else:
         decoder = DecoderRNN(
@@ -136,18 +144,32 @@ def main(
             freeze_embedding_layer=freeze_embedding_layer,
             pad_idx=tokenizer.pad_token_id,
             encoder_hidden_size=encoder_hidden_dim,
-            num_embeddings=embedding_model.get_input_embeddings().weight.shape[0]
+            num_embeddings=embedding_model.get_input_embeddings().weight.shape[0],
+            sos_token_id=tokenizer.convert_tokens_to_ids('<sos>')
         ).to(device)
 
-    train(
-        train_dataloader=train_data_loader,
-        val_dataloader=val_data_loader,
-        encoder=encoder,
-        decoder=decoder,
-        model_weights_out_dir=model_weights_out_dir,
-        n_epochs=n_epochs,
-        tokenizer=tokenizer
-    )
+    if model_weights_path is not None:
+        encoder.load_state_dict(torch.load(Path(model_weights_path) / 'encoder.pt', map_location=device))
+        decoder.load_state_dict(torch.load(Path(model_weights_path) / 'decoder.pt', map_location=device))
+
+    if evaluate_only:
+        _, val_loss = evaluate(
+            encoder=encoder,
+            decoder=decoder,
+            data_loader=val_data_loader,
+            tokenizer=tokenizer,
+            criterion=nn.NLLLoss(ignore_index=tokenizer.pad_token_id)
+        )
+    else:
+        train(
+            train_dataloader=train_data_loader,
+            val_dataloader=val_data_loader,
+            encoder=encoder,
+            decoder=decoder,
+            model_weights_out_dir=model_weights_out_dir,
+            n_epochs=n_epochs,
+            tokenizer=tokenizer
+        )
 
 
 if __name__ == '__main__':
@@ -169,6 +191,8 @@ if __name__ == '__main__':
     parser.add_argument('--attention_dim', default=256, type=int)
     parser.add_argument('--use_wandb', action='store_true', default=False)
     parser.add_argument('--seed', type=int, default=None)
+    parser.add_argument('--model_weights_path', default=None)
+    parser.add_argument('--evaluate_only', action='store_true', default=False)
 
     args = parser.parse_args()
 
@@ -187,5 +211,7 @@ if __name__ == '__main__':
          encoder_hidden_dim=args.encoder_hidden_dim,
          decoder_hidden_dim=args.decoder_hidden_dim,
          attention_dim=args.attention_dim,
-         seed=args.seed
+         seed=args.seed,
+         model_weights_path=args.model_weights_path,
+         evaluate_only=args.evaluate_only
          )
