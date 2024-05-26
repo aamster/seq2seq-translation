@@ -1,3 +1,5 @@
+import re
+import unicodedata
 from typing import List, Tuple, Dict
 
 import numpy as np
@@ -8,13 +10,44 @@ from torchtext.vocab import build_vocab_from_iterator, Vocab
 from transformers import PreTrainedTokenizer
 
 
-def read_data(data_path: str):
+def _preprocess_string(
+    s: str,
+    lowercase: bool = False,
+    remove_diacritical_marks: bool = False,
+    remove_non_eos_punctuation: bool = False
+):
+    if lowercase:
+        s = s.lower()
+    if remove_diacritical_marks:
+        s = ''.join(
+            c for c in unicodedata.normalize('NFD', s)
+            if unicodedata.category(c) != 'Mn'
+        )
+    if remove_non_eos_punctuation:
+        s = re.sub(r"[^a-zA-Z!?]+", r" ", s)
+    return s
+
+
+def read_data(
+    data_path: str,
+    lowercase: bool = False,
+    remove_diacritical_marks: bool = False,
+    remove_non_eos_punctuation: bool = False
+):
     print("Reading lines...")
 
     lines = open(data_path, encoding='utf-8').\
         read().strip().split('\n')
 
-    pairs: List[Tuple[str, ...]] = [tuple([s.strip() for s in l.split('\t')]) for l in lines]
+    pairs: List[Tuple[str, ...]] = [
+        tuple([
+            _preprocess_string(
+                s=s,
+                lowercase=lowercase,
+                remove_diacritical_marks=remove_diacritical_marks,
+                remove_non_eos_punctuation=remove_non_eos_punctuation
+            )
+            for s in l.split('\t')]) for l in lines]
 
     return pairs
 
@@ -120,7 +153,7 @@ class CollateFunction:
         return src_batch_padded, trg_input_batch_padded, target_batch_padded
 
 
-def get_target_vocab(
+def get_vocabs(
     data:  List[Tuple[str, ...]],
     tokenizer: PreTrainedTokenizer,
     min_freq: int = 1
@@ -131,20 +164,30 @@ def get_target_vocab(
 
     :return:
     """
+    source = [x[0] for x in data]
     target = [x[1] for x in data]
+
+    source = [tokenizer.encode(x) for x in source]
+    source = [['<sos>'] + tokenizer.convert_ids_to_tokens(x) for x in source]
 
     target = [tokenizer.encode(x) for x in target]
     target = [['<sos>'] + tokenizer.convert_ids_to_tokens(x) for x in target]
 
-    vocab = build_vocab_from_iterator(
+    source = build_vocab_from_iterator(
+        iterator=source,
+        min_freq=min_freq,
+        specials=[tokenizer.pad_token, tokenizer.eos_token, tokenizer.unk_token, '<sos>']
+    )
+
+    target = build_vocab_from_iterator(
         iterator=target,
         min_freq=min_freq,
         specials=[tokenizer.pad_token, tokenizer.eos_token, tokenizer.unk_token, '<sos>']
     )
 
     new_vocab_id_tokenizer_id_map = {
-        vocab.get_stoi()[x]: tokenizer.convert_tokens_to_ids(x)
-        for x in vocab.get_stoi()
+        target.get_stoi()[x]: tokenizer.convert_tokens_to_ids(x)
+        for x in target.get_stoi()
     }
 
-    return vocab, new_vocab_id_tokenizer_id_map
+    return source, target, new_vocab_id_tokenizer_id_map

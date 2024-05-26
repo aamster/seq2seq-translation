@@ -12,7 +12,7 @@ from transformers import T5Tokenizer, T5Model
 
 from seq2seq_translation.attention import AttentionType
 from seq2seq_translation.data_loading import \
-    DataSplitter, SentencePairsDataset, CollateFunction, read_data, get_target_vocab
+    DataSplitter, SentencePairsDataset, CollateFunction, read_data, get_vocabs
 from seq2seq_translation.rnn import EncoderRNN, DecoderRNN, AttnDecoderRNN
 from seq2seq_translation.train_evaluate import train, evaluate
 
@@ -35,7 +35,10 @@ def main(
         learning_rate: float = 1e-3,
         seed: Optional[int] = None,
         model_weights_path: Optional[str] = None,
-        evaluate_only: bool = False
+        evaluate_only: bool = False,
+        lowercase: bool = False,
+        remove_diacritical_marks: bool = False,
+        remove_non_eos_punctuation: bool = False
 ):
     if seed is not None:
         np.random.seed(seed)
@@ -60,7 +63,12 @@ def main(
             },
         )
 
-    data = read_data(data_path=data_path)
+    data = read_data(
+        data_path=data_path,
+        lowercase=lowercase,
+        remove_diacritical_marks=remove_diacritical_marks,
+        remove_non_eos_punctuation=remove_non_eos_punctuation
+    )
     splitter = DataSplitter(
         data=data, train_frac=0.8)
     train_pairs, test_pairs = splitter.split()
@@ -71,10 +79,13 @@ def main(
     embedding_model = T5Model.from_pretrained("t5-small")
     embedding_model.resize_token_embeddings(len(tokenizer))
 
-    target_vocab, target_vocab_id_tokenizer_id_map = get_target_vocab(
+    source_vocab, target_vocab, target_vocab_id_tokenizer_id_map = get_vocabs(
         data=data,
         tokenizer=tokenizer
     )
+
+    print(f'{len(source_vocab)} source tokens')
+    print(f'{len(target_vocab)} target tokens')
 
     if limit is not None:
         train_pairs = train_pairs[:limit]
@@ -194,6 +205,9 @@ if __name__ == '__main__':
     parser.add_argument('--seed', type=int, default=None)
     parser.add_argument('--model_weights_path', default=None)
     parser.add_argument('--evaluate_only', action='store_true', default=False)
+    parser.add_argument('--lowercase', action='store_true', default=False)
+    parser.add_argument('--remove_diacritical_marks', action='store_true', default=False)
+    parser.add_argument('--remove_non_eos_punctuation', action='store_true', default=False)
 
     args = parser.parse_args()
 
