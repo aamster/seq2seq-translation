@@ -228,5 +228,8 @@ if __name__ == '__main__':
          attention_dim=args.attention_dim,
          seed=args.seed,
          model_weights_path=args.model_weights_path,
-         evaluate_only=args.evaluate_only
+         evaluate_only=args.evaluate_only,
+         lowercase=args.lowercase,
+         remove_diacritical_marks=args.remove_diacritical_marks,
+         remove_non_eos_punctuation=args.remove_non_eos_punctuation
          )
