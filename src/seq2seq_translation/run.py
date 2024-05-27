@@ -14,6 +14,7 @@ from seq2seq_translation.attention import AttentionType
 from seq2seq_translation.data_loading import \
     DataSplitter, SentencePairsDataset, CollateFunction, read_data, get_vocabs
 from seq2seq_translation.rnn import EncoderRNN, DecoderRNN, AttnDecoderRNN
+from seq2seq_translation.spacy_nlp import SpacyTokenizer, SpacyEmbedding
 from seq2seq_translation.train_evaluate import train, evaluate
 
 
@@ -38,7 +39,9 @@ def main(
         evaluate_only: bool = False,
         lowercase: bool = False,
         remove_diacritical_marks: bool = False,
-        remove_non_eos_punctuation: bool = False
+        remove_non_eos_punctuation: bool = False,
+        nlp_model: str = 'spacy',
+        min_freq: int = 1
 ):
     if seed is not None:
         np.random.seed(seed)
@@ -73,16 +76,51 @@ def main(
         data=data, train_frac=0.8)
     train_pairs, test_pairs = splitter.split()
 
-    tokenizer = T5Tokenizer.from_pretrained("t5-small")
-    tokenizer.add_special_tokens({'additional_special_tokens': ['<sos>']})
+    if nlp_model == 'spacy':
+        source_tokenizer = SpacyTokenizer(
+            spacy_model_name='en_core_web_md',
+            text=[x[0] for x in train_pairs],
+            max_len=max_input_length,
+            min_freq=min_freq
+        )
+        target_tokenizer = SpacyTokenizer(
+            spacy_model_name='fr_core_news_md',
+            text=[x[1] for x in train_pairs],
+            max_len=max_input_length,
+            min_freq=min_freq
+        )
 
-    embedding_model = T5Model.from_pretrained("t5-small")
-    embedding_model.resize_token_embeddings(len(tokenizer))
+        source_embeddings = SpacyEmbedding(
+            tokenizer=source_tokenizer
+        )
+        target_embeddings = SpacyEmbedding(
+            tokenizer=target_tokenizer
+        )
 
-    source_vocab, target_vocab, target_vocab_id_tokenizer_id_map = get_vocabs(
-        data=data,
-        tokenizer=tokenizer
-    )
+        source_vocab = source_tokenizer.vocab
+        target_vocab = target_tokenizer.vocab
+        target_vocab_id_tokenizer_id_map = {x: x for x in range(len(source_vocab))}
+    elif nlp_model == 'huggingface':
+        source_tokenizer = T5Tokenizer.from_pretrained("t5-small")
+        source_tokenizer.add_special_tokens({'additional_special_tokens': ['<sos>']})
+
+        target_tokenizer = T5Tokenizer.from_pretrained("t5-small")
+        target_tokenizer.add_special_tokens({'additional_special_tokens': ['<sos>']})
+
+        source_embeddings = T5Model.from_pretrained("t5-small")
+        source_embeddings.resize_token_embeddings(len(source_tokenizer))
+
+        target_embeddings = T5Model.from_pretrained("t5-small")
+        target_embeddings.resize_token_embeddings(len(source_tokenizer))
+
+        source_vocab, target_vocab, target_vocab_id_tokenizer_id_map = get_vocabs(
+            data=data,
+            source_tokenizer=source_tokenizer,
+            target_tokenizer=target_tokenizer,
+            min_freq=min_freq
+        )
+    else:
+        raise ValueError(f'Unknown nlp model {nlp_model}')
 
     print(f'{len(source_vocab)} source tokens')
     print(f'{len(target_vocab)} target tokens')
@@ -93,20 +131,22 @@ def main(
 
     train_dset = SentencePairsDataset(
         data=train_pairs,
-        tokenizer=tokenizer,
+        source_tokenizer=source_tokenizer,
+        target_tokenizer=target_tokenizer,
         max_length=max_input_length,
         target_vocab=target_vocab,
         target_vocab_id_tokenizer_id_map=target_vocab_id_tokenizer_id_map
     )
     val_dset = SentencePairsDataset(
         data=test_pairs,
-        tokenizer=tokenizer,
+        source_tokenizer=source_tokenizer,
+        target_tokenizer=target_tokenizer,
         max_length=max_input_length,
         target_vocab=target_vocab,
         target_vocab_id_tokenizer_id_map=target_vocab_id_tokenizer_id_map
     )
 
-    collate_fn = CollateFunction(pad_token_id=tokenizer.pad_token_id)
+    collate_fn = CollateFunction(pad_token_id=source_tokenizer.pad_token_id)
     train_data_loader = DataLoader(
         dataset=train_dset,
         shuffle=True,
@@ -123,12 +163,12 @@ def main(
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     encoder = EncoderRNN(
-        input_size=len(tokenizer.get_vocab()),
+        input_size=len(source_tokenizer.get_vocab()),
         hidden_size=encoder_hidden_dim,
         bidirectional=encoder_bidirectional,
-        embedding_model=embedding_model if use_pretrained_embeddings else None,
+        embedding_model=source_embeddings if use_pretrained_embeddings else None,
         freeze_embedding_layer=freeze_embedding_layer,
-        pad_idx=tokenizer.pad_token_id,
+        pad_idx=source_tokenizer.pad_token_id,
     ).to(device)
 
     if use_attention:
@@ -138,25 +178,25 @@ def main(
             output_size=len(target_vocab),
             encoder_bidirectional=encoder_bidirectional,
             max_len=max_input_length,
-            embedding_model=embedding_model if use_pretrained_embeddings else None,
+            embedding_model=target_embeddings if use_pretrained_embeddings else None,
             freeze_embedding_layer=freeze_embedding_layer,
             attention_type=attention_type,
             encoder_output_size=encoder_hidden_dim,
-            pad_idx=tokenizer.pad_token_id,
-            num_embeddings=embedding_model.get_input_embeddings().weight.shape[0],
-            sos_token_id=tokenizer.convert_tokens_to_ids('<sos>')
+            pad_idx=source_tokenizer.pad_token_id,
+            num_embeddings=target_embeddings.get_input_embeddings().weight.shape[0],
+            sos_token_id=source_tokenizer.convert_tokens_to_ids('<sos>')
         ).to(device)
     else:
         decoder = DecoderRNN(
             hidden_size=decoder_hidden_dim,
             output_size=len(target_vocab),
             max_len=max_input_length,
-            embedding_model=embedding_model if use_pretrained_embeddings else None,
+            embedding_model=target_embeddings if use_pretrained_embeddings else None,
             freeze_embedding_layer=freeze_embedding_layer,
-            pad_idx=tokenizer.pad_token_id,
+            pad_idx=source_tokenizer.pad_token_id,
             encoder_hidden_size=2*encoder_hidden_dim if encoder_bidirectional else encoder_hidden_dim,
-            num_embeddings=embedding_model.get_input_embeddings().weight.shape[0],
-            sos_token_id=tokenizer.convert_tokens_to_ids('<sos>'),
+            num_embeddings=target_embeddings.get_input_embeddings().weight.shape[0],
+            sos_token_id=source_tokenizer.convert_tokens_to_ids('<sos>'),
             context_size=2*encoder_hidden_dim if encoder_bidirectional else encoder_hidden_dim
         ).to(device)
 
@@ -169,8 +209,8 @@ def main(
             encoder=encoder,
             decoder=decoder,
             data_loader=val_data_loader,
-            tokenizer=tokenizer,
-            criterion=nn.NLLLoss(ignore_index=tokenizer.pad_token_id)
+            tokenizer=target_tokenizer,
+            criterion=nn.NLLLoss(ignore_index=target_tokenizer.pad_token_id)
         )
     else:
         train(
@@ -180,7 +220,7 @@ def main(
             decoder=decoder,
             model_weights_out_dir=model_weights_out_dir,
             n_epochs=n_epochs,
-            tokenizer=tokenizer
+            tokenizer=target_tokenizer
         )
 
 
@@ -208,6 +248,8 @@ if __name__ == '__main__':
     parser.add_argument('--lowercase', action='store_true', default=False)
     parser.add_argument('--remove_diacritical_marks', action='store_true', default=False)
     parser.add_argument('--remove_non_eos_punctuation', action='store_true', default=False)
+    parser.add_argument('--nlp_model', default='spacy')
+    parser.add_argument('--min_freq', default=1)
 
     args = parser.parse_args()
 
@@ -231,5 +273,7 @@ if __name__ == '__main__':
          evaluate_only=args.evaluate_only,
          lowercase=args.lowercase,
          remove_diacritical_marks=args.remove_diacritical_marks,
-         remove_non_eos_punctuation=args.remove_non_eos_punctuation
+         remove_non_eos_punctuation=args.remove_non_eos_punctuation,
+         min_freq=args.min_freq,
+         nlp_model=args.nlp_model
          )

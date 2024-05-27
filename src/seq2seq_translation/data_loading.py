@@ -9,6 +9,8 @@ from torch.utils.data import Dataset
 from torchtext.vocab import build_vocab_from_iterator, Vocab
 from transformers import PreTrainedTokenizer
 
+from seq2seq_translation.spacy_nlp import SpacyTokenizer
+
 
 def _preprocess_string(
     s: str,
@@ -56,14 +58,16 @@ class SentencePairsDataset(Dataset):
     def __init__(
         self,
         data: List[Tuple[str, ...]],
-        tokenizer: PreTrainedTokenizer,
+        source_tokenizer: PreTrainedTokenizer | SpacyTokenizer,
+        target_tokenizer: PreTrainedTokenizer | SpacyTokenizer,
         target_vocab: Vocab,
         target_vocab_id_tokenizer_id_map: Dict[int, int],
         max_length: int = 60,
     ):
         self._data = data
-        self._tokenizer = tokenizer
-        self._tokenizer_itos = {v: k for k, v in tokenizer.get_vocab().items()}
+        self._source_tokenizer = source_tokenizer
+        self._target_tokenizer = target_tokenizer
+        self._target_tokenizer_itos = {v: k for k, v in target_tokenizer.get_vocab().items()}
         self._max_length = max_length
         self._target_vocab_stoi = target_vocab.get_stoi()
         self._target_vocab_id_tokenizer_id_map = target_vocab_id_tokenizer_id_map
@@ -73,27 +77,32 @@ class SentencePairsDataset(Dataset):
 
     def __getitem__(self, idx):
         source, target = self._data[idx]
-        source = self._tokenizer(
+        source = self._source_tokenizer(
             source,
             max_length=self._max_length,
             truncation=True,
             return_tensors="pt",
         )
-        decoder_input = self._tokenizer(
+        decoder_input = self._target_tokenizer(
             target,
             max_length=self._max_length,
             truncation=True,
             return_tensors="pt",
         )
 
-        source = source['input_ids']
-        decoder_input = decoder_input['input_ids']
+        if isinstance(self._source_tokenizer, PreTrainedTokenizer):
+            source = source['input_ids']
+            decoder_input = decoder_input['input_ids']
 
-        # Remove batch dimension
-        source = source.squeeze(0)
-        decoder_input = decoder_input.squeeze(0)
+            # Remove batch dimension
+            source = source.squeeze(0)
+            decoder_input = decoder_input.squeeze(0)
 
-        target = torch.tensor([self._target_vocab_stoi[x] for x in [self._tokenizer_itos[x.item()] for x in decoder_input]])
+            # following weirdness is to map the tokenizer ids (which includes multiple languages)
+            # to the target language (singlue language), to reduce dimensionality of target
+            target = torch.tensor([self._target_vocab_stoi[x] for x in [self._tokenizer_itos[x.item()] for x in decoder_input]])
+        else:
+            target = decoder_input
 
         return source, decoder_input, target
 
@@ -155,7 +164,8 @@ class CollateFunction:
 
 def get_vocabs(
     data:  List[Tuple[str, ...]],
-    tokenizer: PreTrainedTokenizer,
+    source_tokenizer: PreTrainedTokenizer | SpacyTokenizer,
+    target_tokenizer: PreTrainedTokenizer | SpacyTokenizer,
     min_freq: int = 1
 ):
     """
@@ -167,26 +177,26 @@ def get_vocabs(
     source = [x[0] for x in data]
     target = [x[1] for x in data]
 
-    source = [tokenizer.encode(x) for x in source]
-    source = [['<sos>'] + tokenizer.convert_ids_to_tokens(x) for x in source]
+    source = [source_tokenizer.encode(x) for x in source]
+    source = [['<sos>'] + source_tokenizer.convert_ids_to_tokens(x) for x in source]
 
-    target = [tokenizer.encode(x) for x in target]
-    target = [['<sos>'] + tokenizer.convert_ids_to_tokens(x) for x in target]
+    target = [target_tokenizer.encode(x) for x in target]
+    target = [['<sos>'] + target_tokenizer.convert_ids_to_tokens(x) for x in target]
 
     source = build_vocab_from_iterator(
         iterator=source,
         min_freq=min_freq,
-        specials=[tokenizer.pad_token, tokenizer.eos_token, tokenizer.unk_token, '<sos>']
+        specials=[source_tokenizer.pad_token, source_tokenizer.eos_token, source_tokenizer.unk_token, '<sos>']
     )
 
     target = build_vocab_from_iterator(
         iterator=target,
         min_freq=min_freq,
-        specials=[tokenizer.pad_token, tokenizer.eos_token, tokenizer.unk_token, '<sos>']
+        specials=[target_tokenizer.pad_token, target_tokenizer.eos_token, target_tokenizer.unk_token, '<sos>']
     )
 
     new_vocab_id_tokenizer_id_map = {
-        target.get_stoi()[x]: tokenizer.convert_tokens_to_ids(x)
+        target.get_stoi()[x]: target_tokenizer.convert_tokens_to_ids(x)
         for x in target.get_stoi()
     }
 
