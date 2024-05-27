@@ -78,13 +78,13 @@ def main(
 
     if nlp_model == 'spacy':
         source_tokenizer = SpacyTokenizer(
-            spacy_model_name='en_core_web_sm',
+            spacy_model_name='en_core_web_md',
             text=[x[0] for x in train_pairs],
             max_len=max_input_length-1, # -1 due to added eos token
             min_freq=min_freq
         )
         target_tokenizer = SpacyTokenizer(
-            spacy_model_name='fr_core_news_sm',
+            spacy_model_name='fr_core_news_md',
             text=[x[1] for x in train_pairs],
             max_len=max_input_length-1, # -1 due to added eos token
             min_freq=min_freq
