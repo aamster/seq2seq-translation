@@ -249,7 +249,7 @@ if __name__ == '__main__':
     parser.add_argument('--remove_diacritical_marks', action='store_true', default=False)
     parser.add_argument('--remove_non_eos_punctuation', action='store_true', default=False)
     parser.add_argument('--nlp_model', default='spacy')
-    parser.add_argument('--min_freq', default=1)
+    parser.add_argument('--min_freq', default=1, type=int)
 
     args = parser.parse_args()
 
