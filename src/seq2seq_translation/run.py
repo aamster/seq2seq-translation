@@ -78,24 +78,28 @@ def main(
 
     if nlp_model == 'spacy':
         source_tokenizer = SpacyTokenizer(
-            spacy_model_name='en_core_web_md',
+            spacy_model_name='en_core_web_sm',
             text=[x[0] for x in train_pairs],
-            max_len=max_input_length,
+            max_len=max_input_length-1, # -1 due to added eos token
             min_freq=min_freq
         )
         target_tokenizer = SpacyTokenizer(
-            spacy_model_name='fr_core_news_md',
+            spacy_model_name='fr_core_news_sm',
             text=[x[1] for x in train_pairs],
-            max_len=max_input_length,
+            max_len=max_input_length-1, # -1 due to added eos token
             min_freq=min_freq
         )
 
-        source_embeddings = SpacyEmbedding(
-            tokenizer=source_tokenizer
-        )
-        target_embeddings = SpacyEmbedding(
-            tokenizer=target_tokenizer
-        )
+        if use_pretrained_embeddings:
+            source_embeddings = SpacyEmbedding(
+                tokenizer=source_tokenizer
+            )
+            target_embeddings = SpacyEmbedding(
+                tokenizer=target_tokenizer
+            )
+        else:
+            source_embeddings = None
+            target_embeddings = None
 
         source_vocab = source_tokenizer.vocab
         target_vocab = target_tokenizer.vocab
@@ -183,7 +187,7 @@ def main(
             attention_type=attention_type,
             encoder_output_size=encoder_hidden_dim,
             pad_idx=source_tokenizer.pad_token_id,
-            num_embeddings=target_embeddings.get_input_embeddings().weight.shape[0],
+            num_embeddings=target_embeddings.get_input_embeddings().weight.shape[0] if use_pretrained_embeddings else len(target_vocab),
             sos_token_id=source_tokenizer.convert_tokens_to_ids('<sos>')
         ).to(device)
     else:
@@ -195,7 +199,7 @@ def main(
             freeze_embedding_layer=freeze_embedding_layer,
             pad_idx=source_tokenizer.pad_token_id,
             encoder_hidden_size=2*encoder_hidden_dim if encoder_bidirectional else encoder_hidden_dim,
-            num_embeddings=target_embeddings.get_input_embeddings().weight.shape[0],
+            num_embeddings=target_embeddings.get_input_embeddings().weight.shape[0] if use_pretrained_embeddings else len(target_vocab),
             sos_token_id=source_tokenizer.convert_tokens_to_ids('<sos>'),
             context_size=2*encoder_hidden_dim if encoder_bidirectional else encoder_hidden_dim
         ).to(device)
@@ -249,7 +253,7 @@ if __name__ == '__main__':
     parser.add_argument('--remove_diacritical_marks', action='store_true', default=False)
     parser.add_argument('--remove_non_eos_punctuation', action='store_true', default=False)
     parser.add_argument('--nlp_model', default='spacy')
-    parser.add_argument('--min_freq', default=1, type=int)
+    parser.add_argument('--min_freq', default=2, type=int)
 
     args = parser.parse_args()
 
