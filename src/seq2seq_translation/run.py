@@ -1,3 +1,4 @@
+import inspect
 import os
 from argparse import ArgumentParser
 from pathlib import Path
@@ -49,21 +50,11 @@ def main(
 
     if os.environ['USE_WANDB'] == 'True':
         wandb.login()
+
+        signature = inspect.signature(main).parameters.keys()
         wandb.init(
             project="seq2seq_translation",
-            config={
-                "learning_rate": learning_rate,
-                "epochs": n_epochs,
-                "batch_size": batch_size,
-                "encoder_hidden_dim": encoder_hidden_dim,
-                "decoder_hidden_dim": decoder_hidden_dim,
-                "use_attention": use_attention,
-                "attention_dim": attention_dim,
-                "use_pretrained_embeddings": use_pretrained_embeddings,
-                "freeze_embedding_layer": freeze_embedding_layer,
-                "attention_type": attention_type.value,
-                "max_input_length": max_input_length
-            },
+            config={k: v for k, v in locals().items() if k in signature and k not in ('data_path', 'model_weights_out_dir', 'model_weights_path', 'evaluate_only')},
         )
 
     data = read_data(
