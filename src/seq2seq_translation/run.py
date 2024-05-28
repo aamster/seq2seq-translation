@@ -14,6 +14,7 @@ from transformers import T5Tokenizer, T5Model
 from seq2seq_translation.attention import AttentionType
 from seq2seq_translation.data_loading import \
     DataSplitter, SentencePairsDataset, CollateFunction, read_data, get_vocabs
+from seq2seq_translation.naive_tokenizer import NaiveTokenizer
 from seq2seq_translation.rnn import EncoderRNN, DecoderRNN, AttnDecoderRNN
 from seq2seq_translation.spacy_nlp import SpacyTokenizer, SpacyEmbedding
 from seq2seq_translation.train_evaluate import train, evaluate
@@ -114,6 +115,23 @@ def main(
             target_tokenizer=target_tokenizer,
             min_freq=min_freq
         )
+    elif nlp_model == 'naive':
+        source_tokenizer = NaiveTokenizer(
+            text=[x[0] for x in train_pairs],
+            max_len=max_input_length-1, # -1 due to added eos token
+            min_freq=min_freq
+        )
+        target_tokenizer = NaiveTokenizer(
+            text=[x[1] for x in train_pairs],
+            max_len=max_input_length-1, # -1 due to added eos token
+            min_freq=min_freq
+        )
+        source_embeddings = None
+        target_embeddings = None
+
+        source_vocab = source_tokenizer.vocab
+        target_vocab = target_tokenizer.vocab
+        target_vocab_id_tokenizer_id_map = {x: x for x in range(len(source_vocab))}
     else:
         raise ValueError(f'Unknown nlp model {nlp_model}')
 

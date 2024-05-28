@@ -52,7 +52,8 @@ class CosineSimilarityAttention(nn.Module):
         values = self.Wv(x)
 
         Dq = query.shape[-1]
-        scores = query.permute(1, 0, 2).bmm(keys.permute(0, 2, 1)) / math.sqrt(Dq)
+        query = query.squeeze(0).unsqueeze(1)
+        scores = torch.bmm(query, keys.transpose(1, 2)) / math.sqrt(Dq)
         attention = F.softmax(scores, dim=-1)
         Y = attention.bmm(values)
         return Y

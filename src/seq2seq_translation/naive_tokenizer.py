@@ -1,23 +1,23 @@
 from typing import List, Tuple
 
-import spacy
 import torch
 from torchtext.vocab import build_vocab_from_iterator
 import torchtext.transforms as T
 from tqdm import tqdm
 
 
-class SpacyTokenizer:
+class NaiveTokenizer:
+    """
+    Tokenizes text by splitting on space
+    """
     def __init__(
         self,
-        spacy_model_name: str,
         text: List[str],
         max_len: int,
         min_freq: int = 1,
         specials: Tuple[str] = ('<pad>', '<sos>', '<eos>', '<unk>'),
         truncate: bool = True
     ):
-        self._lang = spacy.load(spacy_model_name)
         self._vocab = build_vocab_from_iterator(
             self._get_tokens(text=text),
             min_freq=min_freq,
@@ -40,10 +40,6 @@ class SpacyTokenizer:
     def vocab(self):
         return self._vocab
 
-    @property
-    def lang(self):
-        return self._lang
-
     def get_vocab(self):
         return self._stoi
 
@@ -62,7 +58,9 @@ class SpacyTokenizer:
             return [self._stoi.get(x, self._stoi['<unk>']) for x in tokens]
 
     def _tokenize_str(self, text: str):
-        return [token.text for token in self._lang.tokenizer(text)]
+        if text[-1] in ('.', '!', '?'):
+            text = text[:-1] + f' {text[-1]}'
+        return text.split(' ')
 
     def _get_tokens(self, text: List[str]):
         for t in tqdm(text, total=len(text), desc='Getting tokens'):
@@ -104,41 +102,3 @@ class SpacyTokenizer:
     @property
     def itos(self):
         return self._itos
-
-
-class SpacyEmbedding:
-    def __init__(self, tokenizer: SpacyTokenizer):
-        self._tokenizer = tokenizer
-        self._embedding_dim = self._tokenizer.lang('hello').vector.shape[0]
-        self._unk_vector = torch.randn(self._embedding_dim)
-        _embeddings = self._build_embedding_matrix()
-
-        # The following weirdness is to match the huggingface api for embeddings
-        class _EmbedTokens:
-            @property
-            def weight(self):
-                return _embeddings
-
-        class _Encoder:
-            @property
-            def embed_tokens(self):
-                return _EmbedTokens()
-
-        self._encoder = _Encoder()
-
-    def _build_embedding_matrix(self):
-        embeddings = torch.zeros(len(self._tokenizer.get_vocab()), self._embedding_dim)
-        for i, tok in enumerate(tqdm(self._tokenizer.itos, desc='Building spacy embedding matrix')):
-            doc = self._tokenizer.lang(tok)
-            if doc.has_vector:
-                embeddings[i] = torch.tensor(doc.vector)
-            else:
-                embeddings[i] = self._unk_vector
-        return embeddings
-
-    @property
-    def encoder(self):
-        return self._encoder
-
-    def get_input_embeddings(self):
-        return self._encoder.embed_tokens
