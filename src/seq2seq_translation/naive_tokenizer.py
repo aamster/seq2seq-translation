@@ -1,3 +1,4 @@
+import re
 from typing import List, Tuple
 
 import torch
@@ -58,9 +59,9 @@ class NaiveTokenizer:
             return [self._stoi.get(x, self._stoi['<unk>']) for x in tokens]
 
     def _tokenize_str(self, text: str):
-        if text[-1] in ('.', '!', '?'):
-            text = text[:-1] + f' {text[-1]}'
-        return text.split(' ')
+        text = re.sub(r"([.!?])", r" \1", text)
+        tokens = [x for x in text.split(' ') if len(x) > 0]
+        return tokens
 
     def _get_tokens(self, text: List[str]):
         for t in tqdm(text, total=len(text), desc='Getting tokens'):
