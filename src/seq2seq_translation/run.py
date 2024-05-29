@@ -117,12 +117,12 @@ def main(
         )
     elif nlp_model == 'naive':
         source_tokenizer = NaiveTokenizer(
-            text=[x[0] for x in train_pairs],
+            text=[x[0] for x in data],
             max_len=max_input_length-1, # -1 due to added eos token
             min_freq=min_freq
         )
         target_tokenizer = NaiveTokenizer(
-            text=[x[1] for x in train_pairs],
+            text=[x[1] for x in data],
             max_len=max_input_length-1, # -1 due to added eos token
             min_freq=min_freq
         )
