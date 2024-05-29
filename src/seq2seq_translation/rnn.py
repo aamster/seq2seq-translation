@@ -81,7 +81,7 @@ class DecoderRNN(nn.Module):
 
         self.gru = nn.GRU(gru_input_size, hidden_size, batch_first=True)
         self.dropout = nn.Dropout(dropout_p)
-        self.Wh = nn.Linear(encoder_hidden_size, hidden_size)
+        #self.Wh = nn.Linear(encoder_hidden_size, hidden_size)
         self.out = nn.Linear(hidden_size, output_size)
         self._use_context_vector = use_context_vector
         self._max_len = max_len
@@ -136,7 +136,7 @@ class DecoderRNN(nn.Module):
         batch_size = encoder_hidden.shape[1]
 
         decoder_hidden = encoder_hidden.reshape(1, batch_size, -1)
-        decoder_hidden = self.Wh(decoder_hidden)
+        #decoder_hidden = self.Wh(decoder_hidden)
         decoder_input = torch.empty(
             batch_size, 1,
             dtype=torch.long,
