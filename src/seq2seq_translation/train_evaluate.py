@@ -160,7 +160,7 @@ def train(
 
     encoder_optimizer = optim.Adam(encoder.parameters(), lr=learning_rate, weight_decay=weight_decay)
     decoder_optimizer = optim.Adam(decoder.parameters(), lr=learning_rate, weight_decay=weight_decay)
-    criterion = nn.NLLLoss(ignore_index=tokenizer.pad_token_id)
+    criterion = nn.NLLLoss()
 
     best_loss = float('inf')
 
