@@ -178,21 +178,21 @@ def get_vocabs(
     target = [x[1] for x in data]
 
     source = [source_tokenizer.encode(x) for x in source]
-    source = [['<sos>'] + source_tokenizer.convert_ids_to_tokens(x) for x in source]
+    source = [source_tokenizer.convert_ids_to_tokens(x) for x in source]
 
     target = [target_tokenizer.encode(x) for x in target]
-    target = [['<sos>'] + target_tokenizer.convert_ids_to_tokens(x) for x in target]
+    target = [target_tokenizer.convert_ids_to_tokens(x) for x in target]
 
     source = build_vocab_from_iterator(
         iterator=source,
         min_freq=min_freq,
-        specials=[source_tokenizer.pad_token, source_tokenizer.eos_token, source_tokenizer.unk_token, '<sos>']
+        specials=[source_tokenizer.pad_token, source_tokenizer.eos_token, source_tokenizer.unk_token]
     )
 
     target = build_vocab_from_iterator(
         iterator=target,
         min_freq=min_freq,
-        specials=[target_tokenizer.pad_token, target_tokenizer.eos_token, target_tokenizer.unk_token, '<sos>']
+        specials=[target_tokenizer.pad_token, target_tokenizer.eos_token, target_tokenizer.unk_token]
     )
 
     new_vocab_id_tokenizer_id_map = {

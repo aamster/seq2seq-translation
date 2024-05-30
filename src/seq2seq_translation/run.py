@@ -98,16 +98,12 @@ def main(
         target_vocab_id_tokenizer_id_map = {x: x for x in range(len(source_vocab))}
     elif nlp_model == 'huggingface':
         source_tokenizer = T5Tokenizer.from_pretrained("t5-small")
-        source_tokenizer.add_special_tokens({'additional_special_tokens': ['<sos>']})
 
         target_tokenizer = T5Tokenizer.from_pretrained("t5-small")
-        target_tokenizer.add_special_tokens({'additional_special_tokens': ['<sos>']})
 
         source_embeddings = T5Model.from_pretrained("t5-small")
-        source_embeddings.resize_token_embeddings(len(source_tokenizer))
 
         target_embeddings = T5Model.from_pretrained("t5-small")
-        target_embeddings.resize_token_embeddings(len(source_tokenizer))
 
         source_vocab, target_vocab, target_vocab_id_tokenizer_id_map = get_vocabs(
             data=data,
@@ -197,7 +193,6 @@ def main(
             encoder_output_size=encoder_hidden_dim,
             pad_idx=source_tokenizer.pad_token_id,
             num_embeddings=target_embeddings.get_input_embeddings().weight.shape[0] if use_pretrained_embeddings else len(target_vocab),
-            sos_token_id=source_tokenizer.convert_tokens_to_ids('<sos>')
         ).to(device)
     else:
         decoder = DecoderRNN(
@@ -209,7 +204,6 @@ def main(
             pad_idx=source_tokenizer.pad_token_id,
             encoder_hidden_size=2*encoder_hidden_dim if encoder_bidirectional else encoder_hidden_dim,
             num_embeddings=target_embeddings.get_input_embeddings().weight.shape[0] if use_pretrained_embeddings else len(target_vocab),
-            sos_token_id=source_tokenizer.convert_tokens_to_ids('<sos>'),
             context_size=2*encoder_hidden_dim if encoder_bidirectional else encoder_hidden_dim
         ).to(device)
 
