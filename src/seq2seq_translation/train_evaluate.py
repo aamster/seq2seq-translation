@@ -12,6 +12,7 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 from transformers import PreTrainedTokenizer
 
+from seq2seq_translation.naive_tokenizer import NaiveTokenizer
 from seq2seq_translation.rnn import EncoderRNN, AttnDecoderRNN, DecoderRNN
 
 
@@ -151,7 +152,7 @@ def train(
         encoder,
         decoder,
         n_epochs,
-        tokenizer: PreTrainedTokenizer,
+        tokenizer: PreTrainedTokenizer | NaiveTokenizer,
         model_weights_out_dir: str,
         learning_rate=0.001,
         weight_decay=0.0
@@ -160,7 +161,7 @@ def train(
 
     encoder_optimizer = optim.Adam(encoder.parameters(), lr=learning_rate, weight_decay=weight_decay)
     decoder_optimizer = optim.Adam(decoder.parameters(), lr=learning_rate, weight_decay=weight_decay)
-    criterion = nn.NLLLoss()
+    criterion = nn.NLLLoss(ignore_index=tokenizer.pad_token_id)
 
     best_loss = float('inf')
 
