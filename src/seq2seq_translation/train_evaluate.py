@@ -51,13 +51,9 @@ def train_epoch(
                 target_tensor=target_input_tensor
             )
 
-        batch_size = target_tensor.shape[0]
-        C = decoder_outputs.shape[-1]
-        T = target_tensor.shape[-1]
-
         loss = criterion(
-            decoder_outputs[:, :T].reshape(batch_size * T, C),
-            target_tensor.view(batch_size * T)
+            decoder_outputs.view(-1, decoder_outputs.size(-1)),
+            target_tensor.view(-1)
         )
         loss.backward()
 
