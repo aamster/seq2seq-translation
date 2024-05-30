@@ -131,7 +131,7 @@ def main(
 
         source_vocab = source_tokenizer.vocab
         target_vocab = target_tokenizer.vocab
-        target_vocab_id_tokenizer_id_map = {x: x for x in range(len(source_vocab))}
+        target_vocab_id_tokenizer_id_map = {x: x for x in range(len(target_vocab))}
     else:
         raise ValueError(f'Unknown nlp model {nlp_model}')
 
