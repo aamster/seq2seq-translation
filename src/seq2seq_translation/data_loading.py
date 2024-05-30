@@ -32,6 +32,8 @@ def _preprocess_string(
 
 def read_data(
     data_path: str,
+    source_lang: str,
+    target_lang: str,
     lowercase: bool = False,
     remove_diacritical_marks: bool = False,
     remove_non_eos_punctuation: bool = False
@@ -51,6 +53,12 @@ def read_data(
             )
             for s in l.split('\t')]) for l in lines]
 
+    if source_lang == 'en' and target_lang == 'fr':
+        pass
+    elif source_lang == 'fr' and target_lang == 'en':
+        pairs = [tuple(reversed(x)) for x in pairs]
+    else:
+        raise NotImplementedError
     return pairs
 
 

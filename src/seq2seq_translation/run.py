@@ -43,7 +43,9 @@ def main(
         remove_diacritical_marks: bool = False,
         remove_non_eos_punctuation: bool = False,
         nlp_model: str = 'spacy',
-        min_freq: int = 1
+        min_freq: int = 1,
+        source_lang: str = 'en',
+        target_lang: str = 'fr'
 ):
     if seed is not None:
         np.random.seed(seed)
@@ -62,7 +64,9 @@ def main(
         data_path=data_path,
         lowercase=lowercase,
         remove_diacritical_marks=remove_diacritical_marks,
-        remove_non_eos_punctuation=remove_non_eos_punctuation
+        remove_non_eos_punctuation=remove_non_eos_punctuation,
+        source_lang=source_lang,
+        target_lang=target_lang
     )
     splitter = DataSplitter(
         data=data, train_frac=0.8)
@@ -263,6 +267,8 @@ if __name__ == '__main__':
     parser.add_argument('--remove_non_eos_punctuation', action='store_true', default=False)
     parser.add_argument('--nlp_model', default='spacy')
     parser.add_argument('--min_freq', default=2, type=int)
+    parser.add_argument('--source_lang', default='en')
+    parser.add_argument('--target_lang', default='fr')
 
     args = parser.parse_args()
 
@@ -288,5 +294,7 @@ if __name__ == '__main__':
          remove_diacritical_marks=args.remove_diacritical_marks,
          remove_non_eos_punctuation=args.remove_non_eos_punctuation,
          min_freq=args.min_freq,
-         nlp_model=args.nlp_model
+         nlp_model=args.nlp_model,
+         source_lang=args.source_lang,
+         target_lang =args.target_lang
          )
