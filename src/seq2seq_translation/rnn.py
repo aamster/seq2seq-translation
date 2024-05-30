@@ -52,6 +52,7 @@ class DecoderRNN(nn.Module):
         output_size,
         max_len: int,
         encoder_hidden_size: int,
+        sos_token_id: int,
         num_embeddings: int,
         pad_idx: Optional[int] = None,
         use_context_vector: bool = True,
@@ -84,6 +85,7 @@ class DecoderRNN(nn.Module):
         self.out = nn.Linear(hidden_size, output_size)
         self._use_context_vector = use_context_vector
         self._max_len = max_len
+        self._sos_token_id = sos_token_id
         self._embedding_model = embedding_model
         self._C = output_size
 
@@ -139,7 +141,7 @@ class DecoderRNN(nn.Module):
             batch_size, 1,
             dtype=torch.long,
             device=torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        ).fill_(0)
+        ).fill_(self._sos_token_id)
         return decoder_input, decoder_hidden, []
 
     def forward_step(self, input, hidden, context):
@@ -175,6 +177,7 @@ class AttnDecoderRNN(DecoderRNN):
         attention_type: AttentionType,
         encoder_output_size: int,
         num_embeddings: int,
+        sos_token_id: int,
         pad_idx: Optional[int] = None,
         attention_size: int = 256,
         dropout_p=0.1,
@@ -194,6 +197,7 @@ class AttnDecoderRNN(DecoderRNN):
                 2*encoder_output_size if encoder_bidirectional else encoder_output_size),
             pad_idx=pad_idx,
             num_embeddings=num_embeddings,
+            sos_token_id=sos_token_id
         )
         if attention_type == AttentionType.BahdanauAttention:
             self.attention = BahdanauAttention(
