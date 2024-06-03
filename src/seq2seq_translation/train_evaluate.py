@@ -145,10 +145,13 @@ def evaluate(encoder, decoder, data_loader: DataLoader, tokenizer: SentencePiece
         decoded_ids = topi.squeeze()
         decoded_sentences = tokenizer.processor.decode(decoded_ids.tolist())
 
+        target_sentences = tokenizer.processor.decode(target_tensor.tolist())
         bleu_scores[i] = calc_bleu_score(
             candidate_corpus=decoded_sentences,
-            references_corpus=tokenizer.processor.decode(target_tensor.tolist())
+            references_corpus=target_sentences
         )
+
+    print('pred:', decoded_sentences[0], 'target:', target_sentences[0])
 
     encoder.train()
     decoder.train()
