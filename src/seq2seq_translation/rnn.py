@@ -3,7 +3,6 @@ from typing import Optional
 import torch
 from torch import nn
 import torch.nn.functional as F
-from transformers import T5Model
 
 from seq2seq_translation.attention import BahdanauAttention, AttentionType, \
     CosineSimilarityAttention
@@ -18,29 +17,18 @@ class EncoderRNN(nn.Module):
         embedding_dim=128,
         dropout_p=0.1,
         bidirectional: bool = False,
-        embedding_model: Optional[T5Model] = None,
         freeze_embedding_layer: bool = False
     ):
         super(EncoderRNN, self).__init__()
         self.hidden_size = hidden_size
 
-        if embedding_model is not None:
-            self.embedding = nn.Embedding.from_pretrained(
-                embeddings=embedding_model.encoder.embed_tokens.weight,
-                freeze=freeze_embedding_layer,
-                padding_idx=pad_idx
-            )
-            embedding_dim = self.embedding.weight.shape[1]
-        else:
-            self.embedding = nn.Embedding(num_embeddings=input_size, embedding_dim=embedding_dim)
+        self.embedding = nn.Embedding(num_embeddings=input_size, embedding_dim=embedding_dim)
         self.gru = nn.GRU(input_size=embedding_dim, hidden_size=hidden_size, batch_first=True, bidirectional=bidirectional)
         self.dropout = nn.Dropout(dropout_p)
-        self._embedding_model = embedding_model
 
     def forward(self, input):
         embedded = self.embedding(input)
-        if self._embedding_model is None:
-            embedded = self.dropout(embedded)
+        embedded = self.dropout(embedded)
         output, hidden = self.gru(embedded)
         return output, hidden
 
@@ -57,22 +45,13 @@ class DecoderRNN(nn.Module):
         pad_idx: Optional[int] = None,
         use_context_vector: bool = True,
         dropout_p=0.1,
-        embedding_model: Optional[T5Model] = None,
         freeze_embedding_layer: bool = False,
         embedding_dim: int = 128,
         context_size: int = 128
     ):
         super(DecoderRNN, self).__init__()
-        if embedding_model is not None:
-            self.embedding = nn.Embedding.from_pretrained(
-                embeddings=embedding_model.encoder.embed_tokens.weight,
-                freeze=freeze_embedding_layer,
-                padding_idx=pad_idx
-            )
-            embedding_dim = self.embedding.weight.shape[1]
-        else:
-            self.embedding = nn.Embedding(num_embeddings=num_embeddings,
-                                          embedding_dim=embedding_dim)
+        self.embedding = nn.Embedding(num_embeddings=num_embeddings,
+                                      embedding_dim=embedding_dim)
 
         if use_context_vector:
             gru_input_size = embedding_dim + context_size
@@ -86,7 +65,6 @@ class DecoderRNN(nn.Module):
         self._use_context_vector = use_context_vector
         self._max_len = max_len
         self._sos_token_id = sos_token_id
-        self._embedding_model = embedding_model
         self._C = output_size
 
     def forward(self, encoder_hidden, encoder_outputs=None, target_tensor=None):
@@ -153,8 +131,7 @@ class DecoderRNN(nn.Module):
         :return:
         """
         embedded = self.embedding(input)
-        if self._embedding_model is None:
-            embedded = self.dropout(embedded)
+        embedded = self.dropout(embedded)
 
         if self._use_context_vector:
             if context.shape[1] != 1:
@@ -182,7 +159,6 @@ class AttnDecoderRNN(DecoderRNN):
         attention_size: int = 256,
         dropout_p=0.1,
         encoder_bidirectional: bool = False,
-        embedding_model: Optional[T5Model] = None,
         freeze_embedding_layer: bool = False,
     ):
         super().__init__(
@@ -190,7 +166,6 @@ class AttnDecoderRNN(DecoderRNN):
             output_size=output_size,
             max_len=max_len,
             dropout_p=dropout_p,
-            embedding_model=embedding_model,
             freeze_embedding_layer=freeze_embedding_layer,
             context_size=attention_size,
             encoder_hidden_size=(
