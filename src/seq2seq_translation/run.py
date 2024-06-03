@@ -9,14 +9,13 @@ import torch
 import wandb
 from torch import nn
 from torch.utils.data import DataLoader
-from transformers import T5Tokenizer, T5Model
 
 from seq2seq_translation.attention import AttentionType
 from seq2seq_translation.data_loading import \
-    DataSplitter, SentencePairsDataset, CollateFunction, read_data, get_vocabs
-from seq2seq_translation.naive_tokenizer import NaiveTokenizer
+    DataSplitter, CollateFunction, read_data
+from seq2seq_translation.sentence_pairs_dataset import SentencePairsDataset
+from seq2seq_translation.tokenizers.sentencepiece_tokenizer import SentencePieceTokenizer
 from seq2seq_translation.rnn import EncoderRNN, DecoderRNN, AttnDecoderRNN
-from seq2seq_translation.spacy_nlp import SpacyTokenizer, SpacyEmbedding
 from seq2seq_translation.train_evaluate import train, evaluate
 
 
@@ -29,6 +28,8 @@ def main(
         batch_size: int,
         model_weights_out_dir: str,
         n_epochs: int,
+        source_tokenizer_train_path: str,
+        target_tokenizer_train_path: str,
         limit: Optional[int] = None,
         use_attention: bool = False,
         max_input_length: Optional[int] = None,
@@ -39,13 +40,11 @@ def main(
         seed: Optional[int] = None,
         model_weights_path: Optional[str] = None,
         evaluate_only: bool = False,
-        lowercase: bool = False,
-        remove_diacritical_marks: bool = False,
-        remove_non_eos_punctuation: bool = False,
-        nlp_model: str = 'spacy',
         min_freq: int = 1,
         source_lang: str = 'en',
-        target_lang: str = 'fr'
+        target_lang: str = 'fr',
+        source_vocab_length: int = 13000,
+        target_vocab_length: int = 13000,
 ):
     if seed is not None:
         np.random.seed(seed)
@@ -57,14 +56,12 @@ def main(
         signature = inspect.signature(main).parameters.keys()
         wandb.init(
             project="seq2seq_translation",
-            config={k: v for k, v in locals().items() if k in signature and k not in ('data_path', 'model_weights_out_dir', 'model_weights_path', 'evaluate_only')},
+            config={k: v for k, v in locals().items() if k in signature and k not in (
+            'data_path', 'model_weights_out_dir', 'model_weights_path', 'evaluate_only')},
         )
 
     data = read_data(
         data_path=data_path,
-        lowercase=lowercase,
-        remove_diacritical_marks=remove_diacritical_marks,
-        remove_non_eos_punctuation=remove_non_eos_punctuation,
         source_lang=source_lang,
         target_lang=target_lang
     )
@@ -72,75 +69,21 @@ def main(
         data=data, train_frac=0.8)
     train_pairs, test_pairs = splitter.split()
 
-    if nlp_model == 'spacy':
-        source_tokenizer = SpacyTokenizer(
-            spacy_model_name='en_core_web_md',
-            text=[x[0] for x in train_pairs],
-            max_len=max_input_length-1, # -1 due to added eos token
-            min_freq=min_freq
-        )
-        target_tokenizer = SpacyTokenizer(
-            spacy_model_name='fr_core_news_md',
-            text=[x[1] for x in train_pairs],
-            max_len=max_input_length-1, # -1 due to added eos token
-            min_freq=min_freq
-        )
+    source_tokenizer_model_path = Path(__file__).parent / 'tokenizers' / 'sentencepiece_model' / f'{source_lang}{source_vocab_length}'
+    target_tokenizer_model_path = Path(__file__).parent / 'tokenizers' / 'sentencepiece_model' / f'{target_lang}{source_vocab_length}'
 
-        if use_pretrained_embeddings:
-            source_embeddings = SpacyEmbedding(
-                tokenizer=source_tokenizer
-            )
-            target_embeddings = SpacyEmbedding(
-                tokenizer=target_tokenizer
-            )
-        else:
-            source_embeddings = None
-            target_embeddings = None
+    source_tokenizer = SentencePieceTokenizer(input_path=source_tokenizer_train_path,
+                                              vocab_size=source_vocab_length,
+                                              model_prefix=str(source_tokenizer_model_path))
+    source_tokenizer.train()
 
-        source_vocab = source_tokenizer.vocab
-        target_vocab = target_tokenizer.vocab
-        target_vocab_id_tokenizer_id_map = {x: x for x in range(len(source_vocab))}
-    elif nlp_model == 'huggingface':
-        source_tokenizer = T5Tokenizer.from_pretrained("t5-small")
-        source_tokenizer.add_special_tokens({'additional_special_tokens': ['<sos>']})
+    target_tokenizer = SentencePieceTokenizer(input_path=target_tokenizer_train_path,
+                                              vocab_size=target_vocab_length,
+                                              model_prefix=str(target_tokenizer_model_path))
+    target_tokenizer.train()
 
-        target_tokenizer = T5Tokenizer.from_pretrained("t5-small")
-        target_tokenizer.add_special_tokens({'additional_special_tokens': ['<sos>']})
-
-        source_embeddings = T5Model.from_pretrained("t5-small")
-        source_embeddings.resize_token_embeddings(len(source_tokenizer))
-
-        target_embeddings = T5Model.from_pretrained("t5-small")
-        target_embeddings.resize_token_embeddings(len(source_tokenizer))
-
-        source_vocab, target_vocab, target_vocab_id_tokenizer_id_map = get_vocabs(
-            data=data,
-            source_tokenizer=source_tokenizer,
-            target_tokenizer=target_tokenizer,
-            min_freq=min_freq
-        )
-    elif nlp_model == 'naive':
-        source_tokenizer = NaiveTokenizer(
-            text=[x[0] for x in train_pairs],
-            max_len=max_input_length-1, # -1 due to added eos token
-            min_freq=min_freq
-        )
-        target_tokenizer = NaiveTokenizer(
-            text=[x[1] for x in data],
-            max_len=max_input_length-1, # -1 due to added eos token
-            min_freq=min_freq
-        )
-        source_embeddings = None
-        target_embeddings = None
-
-        source_vocab = source_tokenizer.vocab
-        target_vocab = target_tokenizer.vocab
-        target_vocab_id_tokenizer_id_map = {x: x for x in range(len(target_vocab))}
-    else:
-        raise ValueError(f'Unknown nlp model {nlp_model}')
-
-    print(f'{len(source_vocab)} source tokens')
-    print(f'{len(target_vocab)} target tokens')
+    print(f'{source_tokenizer.processor.vocab_size()} source tokens')
+    print(f'{target_tokenizer.processor.vocab_size()} target tokens')
 
     if limit is not None:
         train_pairs = train_pairs[:limit]
@@ -150,20 +93,16 @@ def main(
         data=train_pairs,
         source_tokenizer=source_tokenizer,
         target_tokenizer=target_tokenizer,
-        max_length=max_input_length,
-        target_vocab=target_vocab,
-        target_vocab_id_tokenizer_id_map=target_vocab_id_tokenizer_id_map
+        max_length=None,
     )
     val_dset = SentencePairsDataset(
         data=test_pairs,
         source_tokenizer=source_tokenizer,
         target_tokenizer=target_tokenizer,
-        max_length=max_input_length,
-        target_vocab=target_vocab,
-        target_vocab_id_tokenizer_id_map=target_vocab_id_tokenizer_id_map
+        max_length=None,
     )
 
-    collate_fn = CollateFunction(pad_token_id=source_tokenizer.pad_token_id)
+    collate_fn = CollateFunction(pad_token_id=source_tokenizer.processor.pad_id())
     train_data_loader = DataLoader(
         dataset=train_dset,
         shuffle=True,
@@ -180,46 +119,46 @@ def main(
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     encoder = EncoderRNN(
-        input_size=len(source_tokenizer.get_vocab()),
+        input_size=source_tokenizer.processor.vocab_size(),
         hidden_size=encoder_hidden_dim,
         bidirectional=encoder_bidirectional,
-        embedding_model=source_embeddings if use_pretrained_embeddings else None,
         freeze_embedding_layer=freeze_embedding_layer,
-        pad_idx=source_tokenizer.pad_token_id,
+        pad_idx=source_tokenizer.processor.pad_id(),
     ).to(device)
 
     if use_attention:
         decoder = AttnDecoderRNN(
             hidden_size=decoder_hidden_dim,
             attention_size=attention_dim,
-            output_size=len(target_vocab),
+            output_size=target_tokenizer.processor.vocab_size(),
             encoder_bidirectional=encoder_bidirectional,
-            max_len=max_input_length,
-            embedding_model=target_embeddings if use_pretrained_embeddings else None,
+            max_len=max([len(x[1]) for x in train_dset]),
             freeze_embedding_layer=freeze_embedding_layer,
             attention_type=attention_type,
             encoder_output_size=encoder_hidden_dim,
-            pad_idx=source_tokenizer.pad_token_id,
-            num_embeddings=target_embeddings.get_input_embeddings().weight.shape[0] if use_pretrained_embeddings else len(target_vocab),
-            sos_token_id=source_tokenizer.convert_tokens_to_ids('<sos>')
+            pad_idx=source_tokenizer.processor.pad_id(),
+            num_embeddings=target_tokenizer.processor.vocab_size(),
+            sos_token_id=source_tokenizer.processor.bos_id()
         ).to(device)
     else:
         decoder = DecoderRNN(
             hidden_size=decoder_hidden_dim,
-            output_size=len(target_vocab),
-            max_len=max_input_length,
-            embedding_model=target_embeddings if use_pretrained_embeddings else None,
+            output_size=target_tokenizer.processor.vocab_size(),
+            max_len=max([len(x[1]) for x in train_dset]),
             freeze_embedding_layer=freeze_embedding_layer,
-            pad_idx=source_tokenizer.pad_token_id,
-            encoder_hidden_size=2*encoder_hidden_dim if encoder_bidirectional else encoder_hidden_dim,
-            num_embeddings=target_embeddings.get_input_embeddings().weight.shape[0] if use_pretrained_embeddings else len(target_vocab),
-            sos_token_id=source_tokenizer.convert_tokens_to_ids('<sos>'),
-            context_size=2*encoder_hidden_dim if encoder_bidirectional else encoder_hidden_dim
+            pad_idx=source_tokenizer.processor.pad_id(),
+            encoder_hidden_size=2 * encoder_hidden_dim if encoder_bidirectional else
+            encoder_hidden_dim,
+            num_embeddings=target_tokenizer.processor.vocab_size(),
+            sos_token_id=source_tokenizer.processor.bos_id(),
+            context_size=2 * encoder_hidden_dim if encoder_bidirectional else encoder_hidden_dim,
         ).to(device)
 
     if model_weights_path is not None:
-        encoder.load_state_dict(torch.load(Path(model_weights_path) / 'encoder.pt', map_location=device))
-        decoder.load_state_dict(torch.load(Path(model_weights_path) / 'decoder.pt', map_location=device))
+        encoder.load_state_dict(
+            torch.load(Path(model_weights_path) / 'encoder.pt', map_location=device))
+        decoder.load_state_dict(
+            torch.load(Path(model_weights_path) / 'decoder.pt', map_location=device))
 
     if evaluate_only:
         _, val_loss = evaluate(
@@ -227,7 +166,7 @@ def main(
             decoder=decoder,
             data_loader=val_data_loader,
             tokenizer=target_tokenizer,
-            criterion=nn.NLLLoss(ignore_index=target_tokenizer.pad_token_id)
+            criterion=nn.NLLLoss(ignore_index=target_tokenizer.processor.pad_id())
         )
     else:
         train(
@@ -262,13 +201,13 @@ if __name__ == '__main__':
     parser.add_argument('--seed', type=int, default=None)
     parser.add_argument('--model_weights_path', default=None)
     parser.add_argument('--evaluate_only', action='store_true', default=False)
-    parser.add_argument('--lowercase', action='store_true', default=False)
-    parser.add_argument('--remove_diacritical_marks', action='store_true', default=False)
-    parser.add_argument('--remove_non_eos_punctuation', action='store_true', default=False)
-    parser.add_argument('--nlp_model', default='spacy')
-    parser.add_argument('--min_freq', default=2, type=int)
-    parser.add_argument('--source_lang', default='en')
-    parser.add_argument('--target_lang', default='fr')
+    parser.add_argument('--min_freq', default=1, type=int)
+    parser.add_argument('--source_lang', default='fr')
+    parser.add_argument('--target_lang', default='en')
+    parser.add_argument('--source_tokenizer_train_path', required=True)
+    parser.add_argument('--target_tokenizer_train_path', required=True)
+    parser.add_argument('--source_vocab_length', default=13000, type=int)
+    parser.add_argument('--target_vocab_length', default=13000, type=int)
 
     args = parser.parse_args()
 
@@ -290,11 +229,11 @@ if __name__ == '__main__':
          seed=args.seed,
          model_weights_path=args.model_weights_path,
          evaluate_only=args.evaluate_only,
-         lowercase=args.lowercase,
-         remove_diacritical_marks=args.remove_diacritical_marks,
-         remove_non_eos_punctuation=args.remove_non_eos_punctuation,
          min_freq=args.min_freq,
-         nlp_model=args.nlp_model,
          source_lang=args.source_lang,
-         target_lang =args.target_lang
+         target_lang=args.target_lang,
+         source_tokenizer_train_path=args.source_tokenizer_train_path,
+         target_tokenizer_train_path=args.target_tokenizer_train_path,
+         source_vocab_length=args.source_vocab_length,
+         target_vocab_length=args.target_vocab_length
          )

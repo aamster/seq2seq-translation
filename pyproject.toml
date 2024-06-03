@@ -9,8 +9,7 @@ description = "seq2seq translation"
 dependencies = [
     "torch",
     "torchtext",
-    "transformers",
-#    "spacy"
+    "sentencepiece",
     "wandb"
 ]
 

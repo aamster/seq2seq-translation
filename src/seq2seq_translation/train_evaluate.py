@@ -3,16 +3,15 @@ import os
 import time
 from pathlib import Path
 
-import numpy as np
 import torch
 import wandb
 from matplotlib import pyplot as plt
 from torch import optim, nn
 from torch.utils.data import DataLoader
 from tqdm import tqdm
-from transformers import PreTrainedTokenizer
 
-from seq2seq_translation.naive_tokenizer import NaiveTokenizer
+from seq2seq_translation.tokenizers.sentencepiece_tokenizer import SentencePieceTokenizer
+from seq2seq_translation.tokenizers.naive_tokenizer import NaiveTokenizer
 from seq2seq_translation.rnn import EncoderRNN, AttnDecoderRNN, DecoderRNN
 
 
@@ -28,11 +27,10 @@ def train_epoch(
 
     total_loss = 0
     for data in tqdm(dataloader, total=len(dataloader), desc=f'train epoch {epoch}'):
-        input_tensor, target_input_tensor, target_tensor = data
+        input_tensor, target_tensor = data
 
         if torch.cuda.is_available():
             input_tensor = input_tensor.cuda()
-            target_input_tensor = target_input_tensor.cuda()
             target_tensor = target_tensor.cuda()
 
         encoder_optimizer.zero_grad()
@@ -44,12 +42,12 @@ def train_epoch(
             decoder_outputs, _, _ = decoder(
                 encoder_outputs=encoder_outputs,
                 encoder_hidden=encoder_hidden,
-                target_tensor=target_input_tensor
+                target_tensor=target_tensor
             )
         else:
             decoder_outputs, _ = decoder(
                 encoder_hidden=encoder_hidden,
-                target_tensor=target_input_tensor
+                target_tensor=target_tensor
             )
 
         batch_size = target_tensor.shape[0]
@@ -92,7 +90,7 @@ def showPlot(train_loss, val_loss):
 
 
 @torch.no_grad()
-def evaluate(encoder, decoder, data_loader: DataLoader, tokenizer: PreTrainedTokenizer, criterion,
+def evaluate(encoder, decoder, data_loader: DataLoader, tokenizer: SentencePieceTokenizer, criterion,
              convert_output_to_words: bool = False):
     encoder.eval()
     decoder.eval()
@@ -101,7 +99,7 @@ def evaluate(encoder, decoder, data_loader: DataLoader, tokenizer: PreTrainedTok
     losses = torch.zeros(len(data_loader))
 
     for i, data in tqdm(enumerate(data_loader), total=len(data_loader), desc='eval'):
-        input_tensor, _, target_tensor = data
+        input_tensor, target_tensor = data
 
         if torch.cuda.is_available():
             input_tensor = input_tensor.cuda()
@@ -137,7 +135,7 @@ def evaluate(encoder, decoder, data_loader: DataLoader, tokenizer: PreTrainedTok
         if convert_output_to_words:
             _, topi = decoder_outputs.topk(1)
             decoded_ids = topi.squeeze()
-            decoded_sentences = tokenizer.batch_decode([data_loader.dataset.target_vocab_id_tokenizer_id_map[x.item()] for x in decoded_ids], skip_special_tokens=True)
+            decoded_sentences = tokenizer.processor.decode(decoded_ids.tolist())
 
     encoder.train()
     decoder.train()
@@ -152,7 +150,7 @@ def train(
         encoder,
         decoder,
         n_epochs,
-        tokenizer: PreTrainedTokenizer | NaiveTokenizer,
+        tokenizer: SentencePieceTokenizer,
         model_weights_out_dir: str,
         learning_rate=0.001,
         weight_decay=0.0
@@ -161,7 +159,7 @@ def train(
 
     encoder_optimizer = optim.Adam(encoder.parameters(), lr=learning_rate, weight_decay=weight_decay)
     decoder_optimizer = optim.Adam(decoder.parameters(), lr=learning_rate, weight_decay=weight_decay)
-    criterion = nn.NLLLoss(ignore_index=tokenizer.pad_token_id)
+    criterion = nn.NLLLoss(ignore_index=tokenizer.processor.pad_id())
 
     best_loss = float('inf')
 
