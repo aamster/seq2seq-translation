@@ -27,7 +27,7 @@ class SentencePairsDataset(Dataset):
     def __getitem__(self, idx):
         source, target = self._data[idx]
         source_ids = self._source_tokenizer.processor.encode(source)
-        target_ids = self._source_tokenizer.processor.encode(source)
+        target_ids = self._target_tokenizer.processor.encode(target)
 
         source = self._transform(source_ids)
         target = self._transform(target_ids)

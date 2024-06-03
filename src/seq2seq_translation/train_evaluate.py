@@ -4,14 +4,15 @@ import time
 from pathlib import Path
 
 import torch
+import torch.nn.functional as F
 import wandb
 from matplotlib import pyplot as plt
 from torch import optim, nn
 from torch.utils.data import DataLoader
+from torchtext.data import bleu_score as calc_bleu_score
 from tqdm import tqdm
 
 from seq2seq_translation.tokenizers.sentencepiece_tokenizer import SentencePieceTokenizer
-from seq2seq_translation.tokenizers.naive_tokenizer import NaiveTokenizer
 from seq2seq_translation.rnn import EncoderRNN, AttnDecoderRNN, DecoderRNN
 
 
@@ -90,13 +91,13 @@ def showPlot(train_loss, val_loss):
 
 
 @torch.no_grad()
-def evaluate(encoder, decoder, data_loader: DataLoader, tokenizer: SentencePieceTokenizer, criterion,
-             convert_output_to_words: bool = False):
+def evaluate(encoder, decoder, data_loader: DataLoader, tokenizer: SentencePieceTokenizer, criterion):
     encoder.eval()
     decoder.eval()
 
     decoded_sentences = []
     losses = torch.zeros(len(data_loader))
+    bleu_scores = torch.zeros(len(data_loader))
 
     for i, data in tqdm(enumerate(data_loader), total=len(data_loader), desc='eval'):
         input_tensor, target_tensor = data
@@ -127,21 +128,34 @@ def evaluate(encoder, decoder, data_loader: DataLoader, tokenizer: SentencePiece
         T = target_tensor.shape[-1]
 
         loss = criterion(
-            decoder_outputs[:, :T].reshape(batch_size * T, C),
+            # We pad if the decoder outputs is shorter than the target.
+            # This can happen if there is a batch in the validation set that is longer than any
+            # in the training set
+
+            # We also truncate if the decoder outputs is longer than the target batch
+            F.pad(
+                decoder_outputs[:, :T],
+                (0, 0, 0, max(target_tensor.shape[1] - decoder_outputs.shape[1], 0), 0, 0),
+                value=tokenizer.processor.pad_id()).reshape(batch_size * T, C),
             target_tensor.view(batch_size * T)
         )
         losses[i] = loss
 
-        if convert_output_to_words:
-            _, topi = decoder_outputs.topk(1)
-            decoded_ids = topi.squeeze()
-            decoded_sentences = tokenizer.processor.decode(decoded_ids.tolist())
+        _, topi = decoder_outputs.topk(1)
+        decoded_ids = topi.squeeze()
+        decoded_sentences = tokenizer.processor.decode(decoded_ids.tolist())
+
+        bleu_scores[i] = calc_bleu_score(
+            candidate_corpus=decoded_sentences,
+            references_corpus=tokenizer.processor.decode(target_tensor.tolist())
+        )
 
     encoder.train()
     decoder.train()
 
     loss = losses.mean()
-    return decoded_sentences, loss
+    bleu_score = bleu_scores.mean()
+    return decoded_sentences, loss, bleu_score
 
 
 def train(
@@ -161,7 +175,7 @@ def train(
     decoder_optimizer = optim.Adam(decoder.parameters(), lr=learning_rate, weight_decay=weight_decay)
     criterion = nn.NLLLoss(ignore_index=tokenizer.processor.pad_id())
 
-    best_loss = float('inf')
+    best_bleu_score = -float('inf')
 
     for epoch in range(1, n_epochs + 1):
         train_loss = train_epoch(
@@ -173,7 +187,7 @@ def train(
             criterion=criterion,
             epoch=epoch
         )
-        _, val_loss = evaluate(
+        _, val_loss, bleu_score = evaluate(
             encoder=encoder,
             decoder=decoder,
             data_loader=val_dataloader,
@@ -181,15 +195,16 @@ def train(
             criterion=criterion
         )
 
-        if val_loss < best_loss:
-            best_loss = val_loss
+        if bleu_score > best_bleu_score:
+            best_bleu_score = bleu_score
             torch.save(encoder.state_dict(), Path(model_weights_out_dir) / 'encoder.pt')
             torch.save(decoder.state_dict(), Path(model_weights_out_dir) / 'decoder.pt')
 
-        print(f'Train loss {train_loss:3f}\t Val loss {val_loss:3f}')
+        print(f'Train loss {train_loss:3f}\t Val loss {val_loss:3f}\t Bleu score {bleu_score:3f}')
 
         if os.environ['USE_WANDB'] == 'True':
             wandb.log({
                 'train_nllloss': train_loss,
-                'val_nllloss': val_loss
+                'val_nllloss': val_loss,
+                'bleu_score': bleu_score
             })

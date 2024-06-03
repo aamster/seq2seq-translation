@@ -71,7 +71,7 @@ def main(
     train_pairs, test_pairs = splitter.split()
 
     source_tokenizer_model_path = Path(sentence_piece_model_save_dir) / f'{source_lang}{source_vocab_length}'
-    target_tokenizer_model_path = Path(sentence_piece_model_save_dir) / f'{target_lang}{source_vocab_length}'
+    target_tokenizer_model_path = Path(sentence_piece_model_save_dir) / f'{target_lang}{target_vocab_length}'
 
     source_tokenizer = SentencePieceTokenizer(input_path=source_tokenizer_train_path,
                                               vocab_size=source_vocab_length,
