@@ -28,6 +28,7 @@ def main(
         batch_size: int,
         model_weights_out_dir: str,
         n_epochs: int,
+        sentence_piece_model_save_dir: str,
         source_tokenizer_train_path: str,
         target_tokenizer_train_path: str,
         limit: Optional[int] = None,
@@ -69,8 +70,8 @@ def main(
         data=data, train_frac=0.8)
     train_pairs, test_pairs = splitter.split()
 
-    source_tokenizer_model_path = Path(__file__).parent / 'tokenizers' / 'sentencepiece_model' / f'{source_lang}{source_vocab_length}'
-    target_tokenizer_model_path = Path(__file__).parent / 'tokenizers' / 'sentencepiece_model' / f'{target_lang}{source_vocab_length}'
+    source_tokenizer_model_path = Path(sentence_piece_model_save_dir) / f'{source_lang}{source_vocab_length}'
+    target_tokenizer_model_path = Path(sentence_piece_model_save_dir) / f'{target_lang}{source_vocab_length}'
 
     source_tokenizer = SentencePieceTokenizer(input_path=source_tokenizer_train_path,
                                               vocab_size=source_vocab_length,
@@ -208,6 +209,7 @@ if __name__ == '__main__':
     parser.add_argument('--target_tokenizer_train_path', required=True)
     parser.add_argument('--source_vocab_length', default=13000, type=int)
     parser.add_argument('--target_vocab_length', default=13000, type=int)
+    parser.add_argument('--sentence_piece_model_save_dir', required=True)
 
     args = parser.parse_args()
 
@@ -235,5 +237,6 @@ if __name__ == '__main__':
          source_tokenizer_train_path=args.source_tokenizer_train_path,
          target_tokenizer_train_path=args.target_tokenizer_train_path,
          source_vocab_length=args.source_vocab_length,
-         target_vocab_length=args.target_vocab_length
+         target_vocab_length=args.target_vocab_length,
+         sentence_piece_model_save_dir=args.sentence_piece_model_save_dir
          )
