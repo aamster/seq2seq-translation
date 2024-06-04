@@ -14,7 +14,7 @@ from seq2seq_translation.attention import AttentionType
 from seq2seq_translation.data_loading import \
     DataSplitter, CollateFunction, read_data
 from seq2seq_translation.sentence_pairs_dataset import SentencePairsDataset
-from seq2seq_translation.tokenizers.sentencepiece_tokenizer import SentencePieceTokenizer
+from seq2seq_translation.tokenization.sentencepiece_tokenizer import SentencePieceTokenizer
 from seq2seq_translation.rnn import EncoderRNN, DecoderRNN, AttnDecoderRNN
 from seq2seq_translation.train_evaluate import train, evaluate
 

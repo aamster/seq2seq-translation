@@ -4,7 +4,7 @@ from torch.utils.data import Dataset
 import torchtext.transforms as T
 
 
-from seq2seq_translation.tokenizers.sentencepiece_tokenizer import SentencePieceTokenizer
+from seq2seq_translation.tokenization.sentencepiece_tokenizer import SentencePieceTokenizer
 
 
 class SentencePairsDataset(Dataset):

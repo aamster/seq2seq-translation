@@ -9,10 +9,11 @@ import wandb
 from matplotlib import pyplot as plt
 from torch import optim, nn
 from torch.utils.data import DataLoader
+from torchmetrics.text import BLEUScore
 from torchtext.data import bleu_score as calc_bleu_score
 from tqdm import tqdm
 
-from seq2seq_translation.tokenizers.sentencepiece_tokenizer import SentencePieceTokenizer
+from seq2seq_translation.tokenization.sentencepiece_tokenizer import SentencePieceTokenizer
 from seq2seq_translation.rnn import EncoderRNN, AttnDecoderRNN, DecoderRNN
 
 
@@ -149,7 +150,7 @@ def evaluate(encoder, decoder, data_loader: DataLoader, tokenizer: SentencePiece
     losses = torch.zeros(len(data_loader))
     bleu_scores = torch.zeros(len(data_loader))
 
-    for i, data in tqdm(enumerate(data_loader), total=len(data_loader), desc='eval'):
+    for batch_idx, data in tqdm(enumerate(data_loader), total=len(data_loader), desc='eval'):
         input_tensor, target_tensor = data
 
         if torch.cuda.is_available():
@@ -178,12 +179,16 @@ def evaluate(encoder, decoder, data_loader: DataLoader, tokenizer: SentencePiece
                 value=tokenizer.processor.pad_id()).reshape(batch_size * T, C),
             target_tensor.view(batch_size * T)
         )
-        losses[i] = loss
+        losses[batch_idx] = loss
 
-        bleu_scores[i] = calc_bleu_score(
-            candidate_corpus=tokenizer.batch_ids_to_str_tokens(ids=decoded_ids),
-            references_corpus=[[x] for x in tokenizer.batch_ids_to_str_tokens(ids=target_tensor)]
-        )
+        bleu = BLEUScore()
+        bleu_score = 0.0
+        for i in range(len(target_tensor)):
+            bleu_score += bleu(
+                tokenizer.ids_to_str_tokens(ids=decoded_ids[i]),
+                [tokenizer.ids_to_str_tokens(ids=target_tensor[i])]
+            )
+        bleu_scores[batch_idx] = bleu_score / len(target_tensor)
 
     _print_random_pred(
         encoder=encoder,

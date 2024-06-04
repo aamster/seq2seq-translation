@@ -10,7 +10,8 @@ dependencies = [
     "torch",
     "torchtext",
     "sentencepiece",
-    "wandb"
+    "wandb",
+    "torchmetrics"
 ]
 
 [tool.setuptools.packages.find]

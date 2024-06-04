@@ -56,10 +56,9 @@ class SentencePieceTokenizer:
         spm.SentencePieceTrainer.train(**self._options)
         self._processor.load(self._model)
 
-    def batch_ids_to_str_tokens(self, ids: torch.tensor):
-        return [
-            [self.processor.id_to_piece(x.item()) for x in di if x not in (
+    def ids_to_str_tokens(self, ids: torch.tensor):
+        return [self.processor.id_to_piece(x.item()) for x in ids if x not in (
                 self.processor.pad_id(),
                 self.processor.bos_id(),
                 self.processor.eos_id()
-            )] for di in ids]
+            )]
