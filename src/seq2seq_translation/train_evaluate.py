@@ -143,15 +143,13 @@ def evaluate(encoder, decoder, data_loader: DataLoader, tokenizer: SentencePiece
 
         _, topi = decoder_outputs.topk(1)
         decoded_ids = topi.squeeze()
-        decoded_sentences = tokenizer.processor.decode(decoded_ids.tolist())
 
-        target_sentences = tokenizer.processor.decode(target_tensor.tolist())
         bleu_scores[i] = calc_bleu_score(
-            candidate_corpus=decoded_sentences,
-            references_corpus=target_sentences
+            candidate_corpus=tokenizer.batch_ids_to_str_tokens(ids=decoded_ids),
+            references_corpus=[[x] for x in tokenizer.batch_ids_to_str_tokens(ids=target_tensor)]
         )
 
-    print('pred:', decoded_sentences[0], 'target:', target_sentences[0])
+    #print('pred:', decoded_sentences[0], 'target:', target_sentences[0])
 
     encoder.train()
     decoder.train()
