@@ -182,13 +182,10 @@ def evaluate(encoder, decoder, data_loader: DataLoader, tokenizer: SentencePiece
         losses[batch_idx] = loss
 
         bleu = BLEUScore()
-        bleu_score = 0.0
-        for i in range(len(target_tensor)):
-            bleu_score += bleu(
-                tokenizer.ids_to_str_tokens(ids=decoded_ids[i]),
-                [tokenizer.ids_to_str_tokens(ids=target_tensor[i])]
-            )
-        bleu_scores[batch_idx] = bleu_score / len(target_tensor)
+        bleu_scores[batch_idx] = bleu(
+            tokenizer.processor.decode(decoded_ids.tolist()),
+            [[x] for x in tokenizer.processor.decode(target_tensor.tolist())],
+        )
 
     _print_random_pred(
         encoder=encoder,
