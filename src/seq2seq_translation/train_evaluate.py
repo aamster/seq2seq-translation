@@ -90,6 +90,56 @@ def showPlot(train_loss, val_loss):
     plt.show()
 
 
+def _print_random_pred(
+        encoder,
+        decoder,
+        data_loader: DataLoader,
+        tokenizer: SentencePieceTokenizer
+):
+    idx = torch.randint(low=0, high=len(data_loader.dataset), size=(1,))[0]
+    input_tensor, target_tensor = data_loader.dataset[idx]
+
+    if torch.cuda.is_available():
+        input_tensor = input_tensor.cuda()
+        target_tensor = target_tensor.cuda()
+
+    _, _, _, decoded_ids = _inference(
+        encoder=encoder,
+        decoder=decoder,
+        input_tensor=input_tensor.reshape(1, -1)
+    )
+
+    pred = tokenizer.processor.decode(decoded_ids.tolist())
+    target = tokenizer.processor.decode(target_tensor.tolist())
+    print('pred:', pred)
+    print('target:', target)
+
+
+def _inference(encoder, decoder, input_tensor):
+    encoder_outputs, encoder_hidden = encoder(input_tensor)
+
+    if isinstance(decoder, AttnDecoderRNN):
+        decoder_res = decoder(
+            encoder_outputs=encoder_outputs,
+            encoder_hidden=encoder_hidden
+        )
+    elif isinstance(decoder, DecoderRNN):
+        decoder_res = decoder(encoder_hidden=encoder_hidden)
+    else:
+        raise ValueError(f'unknown decoder type {type(decoder)}')
+
+    if len(decoder_res) == 3:
+        decoder_outputs, decoder_hidden, decoder_attn = decoder_res
+    else:
+        decoder_outputs, decoder_hidden = decoder_res
+        decoder_attn = None
+
+    _, topi = decoder_outputs.topk(1)
+    decoded_ids = topi.squeeze()
+
+    return decoder_outputs, decoder_hidden, decoder_attn, decoded_ids
+
+
 @torch.no_grad()
 def evaluate(encoder, decoder, data_loader: DataLoader, tokenizer: SentencePieceTokenizer, criterion):
     encoder.eval()
@@ -106,22 +156,11 @@ def evaluate(encoder, decoder, data_loader: DataLoader, tokenizer: SentencePiece
             input_tensor = input_tensor.cuda()
             target_tensor = target_tensor.cuda()
 
-        encoder_outputs, encoder_hidden = encoder(input_tensor)
-
-        if isinstance(decoder, AttnDecoderRNN):
-            decoder_res = decoder(
-                encoder_outputs=encoder_outputs,
-                encoder_hidden=encoder_hidden
-            )
-        elif isinstance(decoder, DecoderRNN):
-            decoder_res = decoder(encoder_hidden=encoder_hidden)
-        else:
-            raise ValueError(f'unknown decoder type {type(decoder)}')
-
-        if len(decoder_res) == 3:
-            decoder_outputs, decoder_hidden, decoder_attn = decoder_res
-        else:
-            decoder_outputs, decoder_hidden = decoder_res
+        decoder_outputs, decoder_hidden, decoder_attn, decoded_ids = _inference(
+            encoder=encoder,
+            decoder=decoder,
+            input_tensor=input_tensor
+        )
 
         batch_size = target_tensor.shape[0]
         C = decoder_outputs.shape[-1]
@@ -141,15 +180,17 @@ def evaluate(encoder, decoder, data_loader: DataLoader, tokenizer: SentencePiece
         )
         losses[i] = loss
 
-        _, topi = decoder_outputs.topk(1)
-        decoded_ids = topi.squeeze()
-
         bleu_scores[i] = calc_bleu_score(
             candidate_corpus=tokenizer.batch_ids_to_str_tokens(ids=decoded_ids),
             references_corpus=[[x] for x in tokenizer.batch_ids_to_str_tokens(ids=target_tensor)]
         )
 
-    #print('pred:', decoded_sentences[0], 'target:', target_sentences[0])
+    _print_random_pred(
+        encoder=encoder,
+        decoder=decoder,
+        data_loader=data_loader,
+        tokenizer=tokenizer
+    )
 
     encoder.train()
     decoder.train()
