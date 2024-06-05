@@ -10,7 +10,6 @@ from matplotlib import pyplot as plt
 from torch import optim, nn
 from torch.utils.data import DataLoader
 from torchmetrics.text import BLEUScore
-from torchtext.data import bleu_score as calc_bleu_score
 from tqdm import tqdm
 
 from seq2seq_translation.tokenization.sentencepiece_tokenizer import SentencePieceTokenizer
@@ -110,8 +109,8 @@ def _print_random_pred(
         input_tensor=input_tensor.reshape(1, -1)
     )
 
-    pred = tokenizer.processor.decode(decoded_ids.tolist())
-    target = tokenizer.processor.decode(target_tensor.tolist())
+    pred = tokenizer.decode(decoded_ids)
+    target = tokenizer.decode(target_tensor)
     print('pred:', pred)
     print('target:', target)
 
@@ -183,8 +182,8 @@ def evaluate(encoder, decoder, data_loader: DataLoader, tokenizer: SentencePiece
 
         bleu = BLEUScore()
         bleu_scores[batch_idx] = bleu(
-            tokenizer.processor.decode(decoded_ids.tolist()),
-            [[x] for x in tokenizer.processor.decode(target_tensor.tolist())],
+            tokenizer.decode(decoded_ids),
+            [[x] for x in tokenizer.decode(target_tensor)],
         )
 
     _print_random_pred(

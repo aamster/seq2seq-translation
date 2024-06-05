@@ -1,4 +1,6 @@
 import os
+from typing import List
+
 import sentencepiece as spm
 import torch
 
@@ -56,9 +58,23 @@ class SentencePieceTokenizer:
         spm.SentencePieceTrainer.train(**self._options)
         self._processor.load(self._model)
 
-    def ids_to_str_tokens(self, ids: torch.tensor):
-        return [self.processor.id_to_piece(x.item()) for x in ids if x not in (
-                self.processor.pad_id(),
-                self.processor.bos_id(),
-                self.processor.eos_id()
-            )]
+    def decode(self, token_ids: torch.tensor) -> List[str] | str:
+        """
+        Decode `token_ids` to a string or list of strings
+        Each list of token_ids is truncated to the first occurance of the eos token
+
+        :param token_ids: token ids to decode
+        :return:
+        """
+        decoded = []
+        if len(token_ids.shape) == 1:
+            token_ids = token_ids.reshape(1, -1)
+        for tokens in token_ids:
+            eos_idx = torch.where(tokens == self.processor.eos_id())[0]
+            if len(eos_idx) > 0:
+                eos_idx = eos_idx[0]
+                tokens = tokens[:eos_idx]
+            decoded.append(self.processor.decode(tokens.tolist()))
+        if len(decoded) == 1:
+            decoded = decoded[0]
+        return decoded
