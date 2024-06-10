@@ -21,7 +21,6 @@ from seq2seq_translation.train_evaluate import train, evaluate
 
 
 def main(
-        data_path: str,
         encoder_hidden_dim: int,
         decoder_hidden_dim: int,
         attention_dim: int,
@@ -188,7 +187,6 @@ def main(
 
 if __name__ == '__main__':
     parser = ArgumentParser()
-    parser.add_argument('--data_path', required=True)
     parser.add_argument('--learning_rate', default=1e-3, type=float)
     parser.add_argument('--max_input_length', type=int, default=None)
     parser.add_argument('--encoder_bidirectional', action='store_true', default=False)
@@ -226,7 +224,7 @@ if __name__ == '__main__':
 
     main(encoder_bidirectional=args.encoder_bidirectional, batch_size=args.batch_size,
          model_weights_out_dir=args.model_weights_out_dir, n_epochs=args.n_epochs,
-         limit=args.limit, use_attention=args.use_attention, data_path=args.data_path,
+         limit=args.limit, use_attention=args.use_attention,
          max_input_length=args.max_input_length,
          use_pretrained_embeddings=args.use_pretrained_embeddings,
          freeze_embedding_layer=args.freeze_embedding_layer,
