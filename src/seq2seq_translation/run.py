@@ -12,7 +12,8 @@ from torch.utils.data import DataLoader
 
 from seq2seq_translation.attention import AttentionType
 from seq2seq_translation.data_loading import \
-    DataSplitter, CollateFunction, read_data
+    DataSplitter, CollateFunction
+from seq2seq_translation.datasets.datasets import LanguagePairsDatasets
 from seq2seq_translation.sentence_pairs_dataset import SentencePairsDataset
 from seq2seq_translation.tokenization.sentencepiece_tokenizer import SentencePieceTokenizer
 from seq2seq_translation.rnn import EncoderRNN, DecoderRNN, AttnDecoderRNN
@@ -27,6 +28,7 @@ def main(
         encoder_bidirectional: bool,
         batch_size: int,
         model_weights_out_dir: str,
+        datasets_out_dir: str,
         n_epochs: int,
         sentence_piece_model_save_dir: str,
         source_tokenizer_train_path: str,
@@ -61,14 +63,15 @@ def main(
             'data_path', 'model_weights_out_dir', 'model_weights_path', 'evaluate_only')},
         )
 
-    data = read_data(
-        data_path=data_path,
+    datasets = LanguagePairsDatasets(
+        out_dir=Path(datasets_out_dir),
         source_lang=source_lang,
         target_lang=target_lang
     )
+
     splitter = DataSplitter(
-        data=data, train_frac=0.8)
-    train_pairs, test_pairs = splitter.split()
+        n_examples=len(datasets), train_frac=0.8)
+    train_idxs, test_idxs = splitter.split()
 
     source_tokenizer_model_path = Path(sentence_piece_model_save_dir) / f'{source_lang}{source_vocab_length}'
     target_tokenizer_model_path = Path(sentence_piece_model_save_dir) / f'{target_lang}{target_vocab_length}'
@@ -87,17 +90,19 @@ def main(
     print(f'{target_tokenizer.processor.vocab_size()} target tokens')
 
     if limit is not None:
-        train_pairs = train_pairs[:limit]
-        test_pairs = test_pairs[:limit]
+        train_idxs = train_idxs[:limit]
+        test_idxs = test_idxs[:limit]
 
     train_dset = SentencePairsDataset(
-        data=train_pairs,
+        datasets=datasets,
+        idxs=train_idxs,
         source_tokenizer=source_tokenizer,
         target_tokenizer=target_tokenizer,
         max_length=None,
     )
     val_dset = SentencePairsDataset(
-        data=test_pairs,
+        datasets=datasets,
+        idxs=test_idxs,
         source_tokenizer=source_tokenizer,
         target_tokenizer=target_tokenizer,
         max_length=None,
@@ -190,6 +195,7 @@ if __name__ == '__main__':
     parser.add_argument('--use_attention', action='store_true', default=False)
     parser.add_argument('--batch_size', type=int, default=128)
     parser.add_argument('--model_weights_out_dir', required=True)
+    parser.add_argument('--datasets_out_dir', required=True)
     parser.add_argument('--n_epochs', type=int, default=1000)
     parser.add_argument('--limit', type=int, default=None)
     parser.add_argument('--use_pretrained_embeddings', action='store_true', default=False)
@@ -238,5 +244,6 @@ if __name__ == '__main__':
          target_tokenizer_train_path=args.target_tokenizer_train_path,
          source_vocab_length=args.source_vocab_length,
          target_vocab_length=args.target_vocab_length,
-         sentence_piece_model_save_dir=args.sentence_piece_model_save_dir
+         sentence_piece_model_save_dir=args.sentence_piece_model_save_dir,
+         datasets_out_dir=args.datasets_out_dir
          )

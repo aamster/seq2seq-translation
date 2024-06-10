@@ -1,31 +1,35 @@
 from typing import List, Tuple, Dict, Optional
 
+import numpy as np
 from torch.utils.data import Dataset
 import torchtext.transforms as T
 
-
+from seq2seq_translation.datasets.datasets import LanguagePairsDatasets
 from seq2seq_translation.tokenization.sentencepiece_tokenizer import SentencePieceTokenizer
 
 
 class SentencePairsDataset(Dataset):
     def __init__(
         self,
-        data: List[Tuple[str, ...]],
+        datasets: LanguagePairsDatasets,
+        idxs: np.ndarray,
         source_tokenizer: SentencePieceTokenizer,
         target_tokenizer: SentencePieceTokenizer,
         max_length: int = None,
     ):
-        self._data = data
+        self._datasets = datasets
+        self._idxs = idxs
         self._source_tokenizer = source_tokenizer
         self._target_tokenizer = target_tokenizer
         self._max_length = max_length
         self._transform = self._get_transform(max_len=max_length)
 
     def __len__(self):
-        return len(self._data)
+        return len(self._idxs)
 
     def __getitem__(self, idx):
-        source, target = self._data[idx]
+        idx = self._idxs[idx]
+        source, target = self._datasets[idx]
         source_ids = self._source_tokenizer.processor.encode(source)
         target_ids = self._target_tokenizer.processor.encode(target)
 

@@ -183,6 +183,8 @@ def evaluate(encoder, decoder, data_loader: DataLoader, tokenizer: SentencePiece
         bleu = BLEUScore()
         bleu_scores[batch_idx] = bleu(
             tokenizer.decode(decoded_ids),
+            # wrapping each decoded string in a list since we have a single translation reference
+            # per example
             [[x] for x in tokenizer.decode(target_tensor)],
         )
 
