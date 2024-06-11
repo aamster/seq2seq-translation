@@ -137,7 +137,7 @@ def main(
             attention_size=attention_dim,
             output_size=target_tokenizer.processor.vocab_size(),
             encoder_bidirectional=encoder_bidirectional,
-            max_len=max([len(x[1]) for x in train_dset]),
+            max_len=len(train_dset[datasets.get_max_target_length_index(from_indexes=train_idxs)][1]),
             freeze_embedding_layer=freeze_embedding_layer,
             attention_type=attention_type,
             encoder_output_size=encoder_hidden_dim,
@@ -149,7 +149,7 @@ def main(
         decoder = DecoderRNN(
             hidden_size=decoder_hidden_dim,
             output_size=target_tokenizer.processor.vocab_size(),
-            max_len=max([len(x[1]) for x in train_dset]),
+            max_len=len(train_dset[datasets.get_max_target_length_index(from_indexes=train_idxs)][1]),
             freeze_embedding_layer=freeze_embedding_layer,
             pad_idx=source_tokenizer.processor.pad_id(),
             encoder_hidden_size=2 * encoder_hidden_dim if encoder_bidirectional else

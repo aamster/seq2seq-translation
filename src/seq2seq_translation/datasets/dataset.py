@@ -37,3 +37,7 @@ class LanguagePairsDataset(abc.ABC):
     @abc.abstractmethod
     def _index_files(self):
         raise NotImplementedError
+
+    @property
+    def target_index(self):
+        return self._target_index

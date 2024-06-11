@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import numpy as np
+
 from seq2seq_translation.datasets.europarl import Europarl
 
 
@@ -20,14 +22,46 @@ class LanguagePairsDatasets:
         ]
 
     def __getitem__(self, idx):
+        dataset = self._get_dataset_for_idx(idx=idx)
+        return dataset[idx]
+
+    def __len__(self):
+        return sum([len(x) for x in self._datasets])
+
+    def _get_dataset_for_idx(self, idx: int):
+        """
+        Gets the dataset corresponding to `idx`
+        
+        :param idx:
+        :return:
+        """
         start = 0
         for i in range(len(self._datasets)):
             if idx <= start + len(self._datasets[i]):
-                return self._datasets[i][idx]
+                return self._datasets[i]
             else:
                 start += len(self._datasets[i])
         else:
             raise RuntimeError(f'idx {idx} out of bounds')
 
-    def __len__(self):
-        return sum([len(x) for x in self._datasets])
+    def get_max_target_length_index(self, from_indexes: np.ndarray) -> int:
+        """
+        Gets the argmax of the examples in the targets
+
+        :param from_indexes: Indices to choose from
+        :return:
+        """
+        max_len = 0
+        max_len_idx = None
+
+        for i, idx in enumerate(from_indexes):
+            dataset = self._get_dataset_for_idx(idx=idx)
+            offset = dataset.target_index[idx]
+            if idx == len(dataset):
+                input_length = len(dataset[len(dataset.target_index)-1][1])
+            else:
+                input_length = dataset.target_index[idx+1] - offset
+            if input_length > max_len:
+                max_len = input_length
+                max_len_idx = i
+        return max_len_idx
