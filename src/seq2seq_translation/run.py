@@ -97,14 +97,14 @@ def main(
         idxs=train_idxs,
         source_tokenizer=source_tokenizer,
         target_tokenizer=target_tokenizer,
-        max_length=None,
+        max_length=max_input_length,
     )
     val_dset = SentencePairsDataset(
         datasets=datasets,
         idxs=test_idxs,
         source_tokenizer=source_tokenizer,
         target_tokenizer=target_tokenizer,
-        max_length=None,
+        max_length=max_input_length,
     )
 
     collate_fn = CollateFunction(pad_token_id=source_tokenizer.processor.pad_id())
