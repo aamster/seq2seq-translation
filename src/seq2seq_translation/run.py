@@ -47,6 +47,7 @@ def main(
         target_lang: str = 'fr',
         source_vocab_length: int = 13000,
         target_vocab_length: int = 13000,
+        train_frac: float = 0.8
 ):
     if seed is not None:
         np.random.seed(seed)
@@ -69,7 +70,7 @@ def main(
     )
 
     splitter = DataSplitter(
-        n_examples=len(datasets), train_frac=0.8)
+        n_examples=len(datasets), train_frac=train_frac)
     train_idxs, test_idxs = splitter.split()
 
     source_tokenizer_model_path = Path(sentence_piece_model_save_dir) / f'{source_lang}{source_vocab_length}'
@@ -216,7 +217,7 @@ if __name__ == '__main__':
     parser.add_argument('--source_vocab_length', default=13000, type=int)
     parser.add_argument('--target_vocab_length', default=13000, type=int)
     parser.add_argument('--sentence_piece_model_save_dir', required=True)
-
+    parser.add_argument('--train_frac', type=float, default=0.8)
     args = parser.parse_args()
 
     if not any(args.attention_type == x.value for x in AttentionType):
@@ -245,5 +246,6 @@ if __name__ == '__main__':
          source_vocab_length=args.source_vocab_length,
          target_vocab_length=args.target_vocab_length,
          sentence_piece_model_save_dir=args.sentence_piece_model_save_dir,
-         datasets_out_dir=args.datasets_out_dir
+         datasets_out_dir=args.datasets_out_dir,
+         train_frac=args.train_frac
          )
