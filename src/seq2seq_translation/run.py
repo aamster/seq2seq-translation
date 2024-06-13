@@ -91,6 +91,8 @@ def main(
     if limit is not None:
         train_idxs = train_idxs[:int(len(train_idxs) * limit)]
         test_idxs = test_idxs[:int(len(test_idxs) * limit)]
+        print(f'Number of train examples after limiting: {len(train_idxs)}')
+        print(f'Number of val examples after limiting: {len(test_idxs)}')
 
     train_dset = SentencePairsDataset(
         datasets=datasets,
@@ -104,7 +106,7 @@ def main(
         idxs=test_idxs,
         source_tokenizer=source_tokenizer,
         target_tokenizer=target_tokenizer,
-        max_length=max_input_length,
+        max_length=None,
     )
 
     collate_fn = CollateFunction(pad_token_id=source_tokenizer.processor.pad_id())
