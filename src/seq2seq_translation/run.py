@@ -89,8 +89,8 @@ def main(
     print(f'{target_tokenizer.processor.vocab_size()} target tokens')
 
     if limit is not None:
-        train_idxs = train_idxs[:limit]
-        test_idxs = test_idxs[:limit]
+        train_idxs = train_idxs[:int(len(train_idxs) * limit)]
+        test_idxs = test_idxs[:int(len(test_idxs) * limit)]
 
     train_dset = SentencePairsDataset(
         datasets=datasets,
@@ -195,7 +195,7 @@ if __name__ == '__main__':
     parser.add_argument('--model_weights_out_dir', required=True)
     parser.add_argument('--datasets_out_dir', required=True)
     parser.add_argument('--n_epochs', type=int, default=1000)
-    parser.add_argument('--limit', type=int, default=None)
+    parser.add_argument('--limit', type=float, default=None)
     parser.add_argument('--use_pretrained_embeddings', action='store_true', default=False)
     parser.add_argument('--freeze_embedding_layer', action='store_true', default=False)
     parser.add_argument('--attention_type', default='CosineSimilarityAttention')
