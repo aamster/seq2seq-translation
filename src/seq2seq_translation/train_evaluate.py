@@ -240,11 +240,6 @@ def train(
             criterion=criterion
         )
 
-        if bleu_score > best_bleu_score:
-            best_bleu_score = bleu_score
-            torch.save(encoder.state_dict(), Path(model_weights_out_dir) / 'encoder.pt')
-            torch.save(decoder.state_dict(), Path(model_weights_out_dir) / 'decoder.pt')
-
         print(f'Train loss {train_loss:3f}\t Val loss {val_loss:3f}\t Bleu score {bleu_score:3f}')
 
         if os.environ['USE_WANDB'] == 'True':
@@ -253,3 +248,10 @@ def train(
                 'val_nllloss': val_loss,
                 'bleu_score': bleu_score
             })
+            
+        if bleu_score > best_bleu_score:
+            best_bleu_score = bleu_score
+            torch.save(encoder.state_dict(), Path(model_weights_out_dir) / 'encoder.pt')
+            torch.save(decoder.state_dict(), Path(model_weights_out_dir) / 'decoder.pt')
+        else:
+            print('Stopping due to early stopping')
