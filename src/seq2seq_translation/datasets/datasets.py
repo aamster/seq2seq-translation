@@ -3,6 +3,7 @@ from pathlib import Path
 import numpy as np
 
 from seq2seq_translation.datasets.europarl import Europarl
+from seq2seq_translation.datasets.news_commentary import NewsCommentaryDataset
 
 
 class LanguagePairsDatasets:
@@ -14,10 +15,11 @@ class LanguagePairsDatasets:
         target_lang: str
     ):
         self._datasets = [
-            Europarl(
-                out_dir=out_dir / 'europarl',
-                source_lang=source_lang,
-                target_lang=target_lang
+            NewsCommentaryDataset(
+                out_dir=out_dir / 'news_commentary',
+                # swapping bc most datasets are en-*
+                source_lang=target_lang,
+                target_lang=source_lang
             )
         ]
 
@@ -57,7 +59,7 @@ class LanguagePairsDatasets:
         for i, idx in enumerate(from_indexes):
             dataset = self._get_dataset_for_idx(idx=idx)
             offset = dataset.target_index[idx]
-            if idx == len(dataset):
+            if idx == len(dataset)-1:
                 input_length = len(dataset[len(dataset.target_index)-1][1])
             else:
                 input_length = dataset.target_index[idx+1] - offset

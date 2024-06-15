@@ -90,13 +90,14 @@ def showPlot(train_loss, val_loss):
     plt.show()
 
 
-def _print_random_pred(
-        encoder,
-        decoder,
-        data_loader: DataLoader,
-        tokenizer: SentencePieceTokenizer
+def get_pred(
+    encoder,
+    decoder,
+    data_loader: DataLoader,
+    source_tokenizer: SentencePieceTokenizer,
+    target_tokenizer: SentencePieceTokenizer,
+    idx: int
 ):
-    idx = torch.randint(low=0, high=len(data_loader.dataset), size=(1,))[0]
     input_tensor, target_tensor = data_loader.dataset[idx]
 
     if torch.cuda.is_available():
@@ -109,10 +110,10 @@ def _print_random_pred(
         input_tensor=input_tensor.reshape(1, -1)
     )
 
-    pred = tokenizer.decode(decoded_ids)
-    target = tokenizer.decode(target_tensor)
-    print('pred:', pred)
-    print('target:', target)
+    input = source_tokenizer.decode(input_tensor)
+    pred = target_tokenizer.decode(decoded_ids)
+    target = target_tokenizer.decode(target_tensor)
+    return input, pred, target
 
 
 def _inference(encoder, decoder, input_tensor):
@@ -141,7 +142,7 @@ def _inference(encoder, decoder, input_tensor):
 
 
 @torch.no_grad()
-def evaluate(encoder, decoder, data_loader: DataLoader, tokenizer: SentencePieceTokenizer, criterion):
+def evaluate(encoder, decoder, data_loader: DataLoader, source_tokenizer: SentencePieceTokenizer, target_tokenizer: SentencePieceTokenizer, criterion):
     encoder.eval()
     decoder.eval()
 
@@ -175,25 +176,31 @@ def evaluate(encoder, decoder, data_loader: DataLoader, tokenizer: SentencePiece
             F.pad(
                 decoder_outputs[:, :T],
                 (0, 0, 0, max(target_tensor.shape[1] - decoder_outputs.shape[1], 0), 0, 0),
-                value=tokenizer.processor.pad_id()).reshape(batch_size * T, C),
+                value=target_tokenizer.processor.pad_id()).reshape(batch_size * T, C),
             target_tensor.view(batch_size * T)
         )
         losses[batch_idx] = loss
 
         bleu = BLEUScore()
         bleu_scores[batch_idx] = bleu(
-            tokenizer.decode(decoded_ids),
+            target_tensor.decode(decoded_ids),
             # wrapping each decoded string in a list since we have a single translation reference
             # per example
-            [[x] for x in tokenizer.decode(target_tensor)],
+            [[x] for x in target_tensor.decode(target_tensor)],
         )
 
-    _print_random_pred(
+    decoded_input, predicted_target, decoded_target = get_pred(
         encoder=encoder,
         decoder=decoder,
         data_loader=data_loader,
-        tokenizer=tokenizer
+        source_tokenizer=source_tokenizer,
+        target_tokenizer=target_tokenizer,
+        idx=torch.randint(low=0, high=len(data_loader.dataset), size=(1,))[0].item()
+
     )
+    print('input:', decoded_input)
+    print('target:', decoded_target)
+    print('pred:', predicted_target)
 
     encoder.train()
     decoder.train()
@@ -248,10 +255,11 @@ def train(
                 'val_nllloss': val_loss,
                 'bleu_score': bleu_score
             })
-            
+
         if bleu_score > best_bleu_score:
             best_bleu_score = bleu_score
             torch.save(encoder.state_dict(), Path(model_weights_out_dir) / 'encoder.pt')
             torch.save(decoder.state_dict(), Path(model_weights_out_dir) / 'decoder.pt')
         else:
             print('Stopping due to early stopping')
+            return

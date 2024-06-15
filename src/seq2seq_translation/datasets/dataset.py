@@ -10,11 +10,15 @@ class LanguagePairsDataset(abc.ABC):
         self._len = None
         os.makedirs(out_dir, exist_ok=True)
         self.download()
+        self._preprocess_dataset()
         self._source_index, self._target_index = self._index_files()
 
     @abc.abstractmethod
     def download(self, **kwargs):
         raise NotImplementedError
+
+    def _preprocess_dataset(self):
+        return
 
     @abc.abstractmethod
     def __getitem__(self, idx) -> Tuple[str, str]:
