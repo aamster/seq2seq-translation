@@ -162,7 +162,6 @@ def evaluate(encoder, decoder, data_loader: DataLoader, source_tokenizer: Senten
     decoder.eval()
 
     decoded_sentences = []
-    losses = torch.zeros(len(data_loader))
     bleu_scores = torch.zeros(len(data_loader))
 
     for batch_idx, data in tqdm(enumerate(data_loader), total=len(data_loader), desc='eval'):
@@ -177,24 +176,6 @@ def evaluate(encoder, decoder, data_loader: DataLoader, source_tokenizer: Senten
             decoder=decoder,
             input_tensor=input_tensor
         )
-
-        batch_size = target_tensor.shape[0]
-        C = decoder_outputs.shape[-1]
-        T = target_tensor.shape[-1]
-
-        loss = criterion(
-            # We pad if the decoder outputs is shorter than the target.
-            # This can happen if there is a batch in the validation set that is longer than any
-            # in the training set
-
-            # We also truncate if the decoder outputs is longer than the target batch
-            F.pad(
-                decoder_outputs[:, :T],
-                (0, 0, 0, max(target_tensor.shape[1] - decoder_outputs.shape[1], 0), 0, 0),
-                value=target_tokenizer.processor.pad_id()).reshape(batch_size * T, C),
-            target_tensor.view(batch_size * T)
-        )
-        losses[batch_idx] = loss
 
         bleu = BLEUScore()
         bleu_scores[batch_idx] = bleu(
@@ -220,9 +201,8 @@ def evaluate(encoder, decoder, data_loader: DataLoader, source_tokenizer: Senten
     encoder.train()
     decoder.train()
 
-    loss = losses.mean()
     bleu_score = bleu_scores.mean()
-    return decoded_sentences, loss, bleu_score
+    return decoded_sentences, bleu_score
 
 
 def train(
@@ -256,7 +236,7 @@ def train(
             epoch=epoch,
             target_tokenizer=target_tokenizer
         )
-        _, val_loss, val_bleu_score = evaluate(
+        _, val_bleu_score = evaluate(
             encoder=encoder,
             decoder=decoder,
             data_loader=val_dataloader,
@@ -265,12 +245,11 @@ def train(
             criterion=criterion
         )
 
-        print(f'Train loss {train_loss:3f}\t Val loss {val_loss:3f}\t Train Bleu score {train_blue_score:3f}\t Val Bleu score {val_bleu_score:3f}')
+        print(f'Train loss {train_loss:3f}\t Train Bleu score {train_blue_score:3f}\t Val Bleu score {val_bleu_score:3f}')
 
         if os.environ['USE_WANDB'] == 'True':
             wandb.log({
                 'train_nllloss': train_loss,
-                'val_nllloss': val_loss,
                 'train_bleu_score': train_blue_score,
                 'val_bleu_score': val_bleu_score
             })
