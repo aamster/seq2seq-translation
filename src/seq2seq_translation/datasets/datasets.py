@@ -2,7 +2,6 @@ from pathlib import Path
 
 import numpy as np
 
-from seq2seq_translation.datasets.europarl import Europarl
 from seq2seq_translation.datasets.news_commentary import NewsCommentaryDataset
 
 

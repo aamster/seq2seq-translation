@@ -75,7 +75,9 @@ class NewsCommentaryDataset(LanguagePairsDataset):
             f.seek(self._target_index[idx])
             target = f.readline()
             f.seek(0)
-        return source, target
+
+        # note: reversing, since we want *->en rather than en->*
+        return target, source
 
     def __len__(self):
         return len(self._source_index)

@@ -23,10 +23,12 @@ def train_epoch(
     encoder_optimizer,
     decoder_optimizer,
     criterion,
-    epoch: int
+    epoch: int,
+    target_tokenizer: SentencePieceTokenizer
 ):
 
     total_loss = 0
+    total_bleu_score = 0
     for data in tqdm(dataloader, total=len(dataloader), desc=f'train epoch {epoch}'):
         input_tensor, target_tensor = data
 
@@ -61,12 +63,25 @@ def train_epoch(
         )
         loss.backward()
 
+        with torch.no_grad():
+            _, topi = decoder_outputs.topk(1)
+            decoded_ids = topi.squeeze()
+
+            bleu = BLEUScore()
+            bleu_score = bleu(
+                target_tokenizer.decode(decoded_ids),
+                # wrapping each decoded string in a list since we have a single translation reference
+                # per example
+                [[x] for x in target_tokenizer.decode(target_tensor)],
+            )
+            total_bleu_score += bleu_score
+
         encoder_optimizer.step()
         decoder_optimizer.step()
 
         total_loss += loss.item()
 
-    return total_loss / len(dataloader)
+    return total_loss / len(dataloader), total_bleu_score / len(dataloader)
 
 
 def asMinutes(s):
@@ -183,10 +198,10 @@ def evaluate(encoder, decoder, data_loader: DataLoader, source_tokenizer: Senten
 
         bleu = BLEUScore()
         bleu_scores[batch_idx] = bleu(
-            target_tensor.decode(decoded_ids),
+            target_tokenizer.decode(decoded_ids),
             # wrapping each decoded string in a list since we have a single translation reference
             # per example
-            [[x] for x in target_tensor.decode(target_tensor)],
+            [[x] for x in target_tokenizer.decode(target_tensor)],
         )
 
     decoded_input, predicted_target, decoded_target = get_pred(
@@ -216,7 +231,8 @@ def train(
         encoder,
         decoder,
         n_epochs,
-        tokenizer: SentencePieceTokenizer,
+        source_tokenizer: SentencePieceTokenizer,
+        target_tokenizer: SentencePieceTokenizer,
         model_weights_out_dir: str,
         learning_rate=0.001,
         weight_decay=0.0
@@ -225,39 +241,42 @@ def train(
 
     encoder_optimizer = optim.Adam(encoder.parameters(), lr=learning_rate, weight_decay=weight_decay)
     decoder_optimizer = optim.Adam(decoder.parameters(), lr=learning_rate, weight_decay=weight_decay)
-    criterion = nn.NLLLoss(ignore_index=tokenizer.processor.pad_id())
+    criterion = nn.NLLLoss(ignore_index=target_tokenizer.processor.pad_id())
 
     best_bleu_score = -float('inf')
 
     for epoch in range(1, n_epochs + 1):
-        train_loss = train_epoch(
+        train_loss, train_blue_score = train_epoch(
             dataloader=train_dataloader,
             encoder=encoder,
             decoder=decoder,
             encoder_optimizer=encoder_optimizer,
             decoder_optimizer=decoder_optimizer,
             criterion=criterion,
-            epoch=epoch
+            epoch=epoch,
+            target_tokenizer=target_tokenizer
         )
-        _, val_loss, bleu_score = evaluate(
+        _, val_loss, val_bleu_score = evaluate(
             encoder=encoder,
             decoder=decoder,
             data_loader=val_dataloader,
-            tokenizer=tokenizer,
+            source_tokenizer=source_tokenizer,
+            target_tokenizer=target_tokenizer,
             criterion=criterion
         )
 
-        print(f'Train loss {train_loss:3f}\t Val loss {val_loss:3f}\t Bleu score {bleu_score:3f}')
+        print(f'Train loss {train_loss:3f}\t Val loss {val_loss:3f}\t Train Bleu score {train_blue_score:3f}\t Val Bleu score {val_bleu_score:3f}')
 
         if os.environ['USE_WANDB'] == 'True':
             wandb.log({
                 'train_nllloss': train_loss,
                 'val_nllloss': val_loss,
-                'bleu_score': bleu_score
+                'train_bleu_score': train_blue_score,
+                'val_bleu_score': val_bleu_score
             })
 
-        if bleu_score > best_bleu_score:
-            best_bleu_score = bleu_score
+        if val_bleu_score > best_bleu_score:
+            best_bleu_score = val_bleu_score
             torch.save(encoder.state_dict(), Path(model_weights_out_dir) / 'encoder.pt')
             torch.save(decoder.state_dict(), Path(model_weights_out_dir) / 'decoder.pt')
         else:

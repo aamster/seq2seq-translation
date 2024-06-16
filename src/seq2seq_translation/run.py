@@ -184,7 +184,8 @@ def main(
             decoder=decoder,
             model_weights_out_dir=model_weights_out_dir,
             n_epochs=n_epochs,
-            tokenizer=target_tokenizer
+            source_tokenizer=source_tokenizer,
+            target_tokenizer=target_tokenizer
         )
 
 
