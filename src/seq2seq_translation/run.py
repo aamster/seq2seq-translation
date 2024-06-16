@@ -57,11 +57,12 @@ def main(
         wandb.login()
 
         signature = inspect.signature(main).parameters.keys()
-        wandb.init(
+        wandb_run = wandb.init(
             project="seq2seq_translation",
             config={k: v for k, v in locals().items() if k in signature and k not in (
             'data_path', 'model_weights_out_dir', 'model_weights_path', 'evaluate_only')},
         )
+        print(f'wandb url', wandb_run.url)
 
     datasets = LanguagePairsDatasets(
         out_dir=Path(datasets_out_dir),
