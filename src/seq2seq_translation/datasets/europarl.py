@@ -1,44 +1,39 @@
 """European Parliament Proceedings Parallel Corpus dataset
 https://www.statmt.org/europarl/
 """
-import tarfile
 from pathlib import Path
+from typing import Optional
 
-import requests
 
-from seq2seq_translation.datasets.dataset import LanguagePairsDataset
+from seq2seq_translation.datasets.dataset import LanguagePairsDataset, _download_and_extract, \
+    _separate_single_language_file
 
 
 class Europarl(LanguagePairsDataset):
-    def __init__(self, out_dir: str | Path, source_lang: str, target_lang: str):
+    def __init__(self, out_dir: str | Path, source_lang: str, target_lang: str, sample_frac: Optional[float] = None):
         self._source_lang = source_lang
         self._target_lang = target_lang
-        self._source_path = (out_dir / f'{source_lang}-{target_lang}' /
-                             f'europarl-v7.{source_lang}-{target_lang}.'
-                             f'{source_lang}')
-        self._target_path = (out_dir / f'{source_lang}-{target_lang}' /
-                             f'europarl-v7.{source_lang}-{target_lang}.'
-                             f'{target_lang}')
-        super().__init__(out_dir=out_dir)
+        self._source_path = out_dir / f'{source_lang}-{target_lang}_{source_lang}.txt'
+        self._target_path = out_dir / f'{source_lang}-{target_lang}_{target_lang}.txt'
+        self._raw_out_path = out_dir / f'{source_lang}-{target_lang}.tsv'
+        super().__init__(out_dir=out_dir, sample_frac=sample_frac)
 
     def download(self):
-        url = f'https://www.statmt.org/europarl/v7/{self._source_lang}-{self._target_lang}.tgz'
+        url = f'https://www.statmt.org/europarl/v10/training/europarl-v10.{self._source_lang}-{self._target_lang}.tsv.gz'
 
-        out_path = Path(self._out_dir) / f'{self._source_lang}-{self._target_lang}'
-        if out_path.exists():
+        out_path = Path(self._out_dir) / f'{self._source_lang}-{self._target_lang}.tsv'
+        if self._source_path.exists() and self._target_path.exists():
             print(f'{out_path} already exists')
             return
 
         print(f'Downloading Europarl dataset to {out_path}')
 
-        response = requests.get(url, stream=True)
-        response.raise_for_status()
-        with open(f'{out_path}.tgz', "wb") as file:
-            for chunk in response.iter_content(chunk_size=8192):
-                file.write(chunk)
+        _download_and_extract(url=url, gzip_path=Path(f'{out_path}.tsv.gz'), out_path=out_path)
 
-        with tarfile.open(f'{out_path}.tgz', "r:gz") as tar:
-            tar.extractall(path=out_path)
+    def _preprocess_dataset(self):
+        _separate_single_language_file(
+            path=self._raw_out_path, source_path=self._source_path, target_path=self._target_path
+        )
 
     def _index_files(self):
         print(f'Indexing {self._source_path}')

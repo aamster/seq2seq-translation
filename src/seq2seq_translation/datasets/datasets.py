@@ -1,7 +1,9 @@
 from pathlib import Path
+from typing import Optional, List
 
 import numpy as np
 
+from seq2seq_translation.datasets.europarl import Europarl
 from seq2seq_translation.datasets.news_commentary import NewsCommentaryDataset
 
 
@@ -11,14 +13,26 @@ class LanguagePairsDatasets:
         self,
         out_dir: Path,
         source_lang: str,
-        target_lang: str
+        target_lang: str,
+        sample_fracs: Optional[List[float]] = None
     ):
+        if sample_fracs is not None:
+            assert len(sample_fracs) == 2
+        else:
+            sample_fracs = [None, None]
         self._datasets = [
+            Europarl(
+                out_dir=out_dir / 'europarl',
+                source_lang=source_lang,
+                target_lang=target_lang,
+                sample_frac=sample_fracs[0]
+            ),
             NewsCommentaryDataset(
                 out_dir=out_dir / 'news_commentary',
                 # swapping bc most datasets are en-*
                 source_lang=target_lang,
-                target_lang=source_lang
+                target_lang=source_lang,
+                sample_frac=sample_fracs[1]
             )
         ]
 
