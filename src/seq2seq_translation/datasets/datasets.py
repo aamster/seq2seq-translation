@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 from typing import Optional, List
 
@@ -38,10 +39,31 @@ class LanguagePairsDatasets:
 
     def __getitem__(self, idx):
         dataset = self._get_dataset_for_idx(idx=idx)
+        idx = self._get_dataset_index(idx=idx)
         return dataset[idx]
 
     def __len__(self):
         return sum([len(x) for x in self._datasets])
+
+    def create_source_tokenizer_train_set(self, source_tokenizer_path: Path):
+        os.makedirs(source_tokenizer_path.parent, exist_ok=True)
+        with open(source_tokenizer_path, 'wb') as f:
+            for dataset in self._datasets:
+                with open(dataset.source_path, 'rb') as ds_source_f:
+                    for line in ds_source_f:
+                        f.write(line)
+
+    def create_target_tokenizer_train_set(self, target_tokenizer_path: Path):
+        os.makedirs(target_tokenizer_path.parent, exist_ok=True)
+        with open(target_tokenizer_path, 'wb') as f:
+            for dataset in self._datasets:
+                with open(dataset.target_path, 'rb') as ds_target_f:
+                    for line in ds_target_f:
+                        f.write(line)
+
+    @property
+    def target_paths(self) -> List[Path]:
+        return [x.target_path for x in self._datasets]
 
     def _get_dataset_for_idx(self, idx: int):
         """
@@ -59,6 +81,21 @@ class LanguagePairsDatasets:
         else:
             raise RuntimeError(f'idx {idx} out of bounds')
 
+    def _get_dataset_index(self, idx: int):
+        """Makes sure that the index starts at 0 for each dataset
+        e.g. idx = 150
+        dataset 0 has len 100
+        dataset 1 has len 200
+
+        The new index should be 50 for dataset 1
+        """
+        dataset = self._get_dataset_for_idx(idx=idx)
+        dataset_index = [i for i in range(len(self._datasets)) if self._datasets[i] == dataset][0]
+        if dataset_index > 0:
+            for i in range(dataset_index):
+                idx -= len(self._datasets[i])
+        return idx
+
     def get_max_target_length_index(self, from_indexes: np.ndarray) -> int:
         """
         Gets the argmax of the examples in the targets
@@ -71,9 +108,10 @@ class LanguagePairsDatasets:
 
         for i, idx in enumerate(from_indexes):
             dataset = self._get_dataset_for_idx(idx=idx)
+            idx = self._get_dataset_index(idx=idx)
             offset = dataset.target_index[idx]
             if idx == len(dataset)-1:
-                input_length = len(dataset[len(dataset.target_index)-1][1])
+                continue
             else:
                 input_length = dataset.target_index[idx+1] - offset
             if input_length > max_len:

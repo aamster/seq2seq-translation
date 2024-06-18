@@ -71,6 +71,14 @@ def main(
         target_lang=target_lang,
         sample_fracs=dataset_sample_fracs
     )
+    print('Creating source tokenizer train set')
+    datasets.create_source_tokenizer_train_set(
+        source_tokenizer_path=Path(source_tokenizer_train_path)
+    )
+    print('Creating target tokenizer train set')
+    datasets.create_target_tokenizer_train_set(
+        target_tokenizer_path=Path(target_tokenizer_train_path)
+    )
 
     splitter = DataSplitter(
         n_examples=len(datasets), train_frac=train_frac)

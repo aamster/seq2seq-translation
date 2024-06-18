@@ -44,11 +44,11 @@ class NewsCommentaryDataset(LanguagePairsDataset):
 
     def __getitem__(self, idx) -> Tuple[str, str]:
         with open(self._source_path, 'r') as f:
-            f.seek(self._source_index[idx])
+            f.seek(self._source_index_sampled[idx])
             source = f.readline()
             f.seek(0)
         with open(self._target_path, 'r') as f:
-            f.seek(self._target_index[idx])
+            f.seek(self._target_index_sampled[idx])
             target = f.readline()
             f.seek(0)
 
@@ -56,7 +56,7 @@ class NewsCommentaryDataset(LanguagePairsDataset):
         return target, source
 
     def __len__(self):
-        return len(self._source_index)
+        return len(self._source_index_sampled)
 
     def _index_files(self):
         print(f'Indexing {self._source_path}')
@@ -65,3 +65,11 @@ class NewsCommentaryDataset(LanguagePairsDataset):
         print(f'Indexing {self._target_path}')
         target_index = self._create_index(filepath=self._target_path)
         return source_index, target_index
+
+    @property
+    def source_path(self) -> Path:
+        return self._source_path
+
+    @property
+    def target_path(self) -> Path:
+        return self._target_path

@@ -31,6 +31,8 @@ class Europarl(LanguagePairsDataset):
         _download_and_extract(url=url, gzip_path=Path(f'{out_path}.tsv.gz'), out_path=out_path)
 
     def _preprocess_dataset(self):
+        if self._source_path.exists() and self._target_path.exists():
+            return
         _separate_single_language_file(
             path=self._raw_out_path, source_path=self._source_path, target_path=self._target_path
         )
@@ -45,15 +47,23 @@ class Europarl(LanguagePairsDataset):
         return source_index, target_index
 
     def __len__(self):
-        return len(self._source_index)
+        return len(self._source_index_sampled)
 
     def __getitem__(self, idx):
         with open(self._source_path, 'r') as f:
-            f.seek(self._source_index[idx])
+            f.seek(self._source_index_sampled[idx])
             source = f.readline()
             f.seek(0)
         with open(self._target_path, 'r') as f:
-            f.seek(self._target_index[idx])
+            f.seek(self._target_index_sampled[idx])
             target = f.readline()
             f.seek(0)
         return source, target
+
+    @property
+    def source_path(self) -> Path:
+        return self._source_path
+
+    @property
+    def target_path(self) -> Path:
+        return self._target_path

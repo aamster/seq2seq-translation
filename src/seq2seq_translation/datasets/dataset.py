@@ -20,8 +20,10 @@ class LanguagePairsDataset(abc.ABC):
         self._source_index, self._target_index = self._index_files()
 
         if sample_frac is not None:
-            self._source_index, self._target_index = self._sample(
-                source_index=self._source_index, target_index=self._target_index)
+            self._source_index_sampled, self._target_index_sampled = self._sample()
+        else:
+            self._source_index_sampled = self._source_index
+            self._target_index_sampled = self._target_index
 
     @abc.abstractmethod
     def download(self, **kwargs):
@@ -56,12 +58,12 @@ class LanguagePairsDataset(abc.ABC):
     def target_index(self):
         return self._target_index
 
-    def _sample(self, source_index: List[int], target_index: List[int]):
-        idxs = np.arange(len(source_index))
+    def _sample(self):
+        idxs = np.arange(len(self._source_index))
         np.random.shuffle(idxs)
         idxs = idxs[:int(len(idxs) * self._sample_frac)]
-        source_index = [source_index[idx] for idx in idxs]
-        target_index = [target_index[idx] for idx in idxs]
+        source_index = [self._source_index[idx] for idx in idxs]
+        target_index = [self._target_index[idx] for idx in idxs]
 
         print(f'Number of examples for {type(self)} after sampling {self._sample_frac}: {len(source_index)}')
         return source_index, target_index
