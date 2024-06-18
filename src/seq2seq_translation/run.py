@@ -180,11 +180,12 @@ def main(
             torch.load(Path(model_weights_path) / 'decoder.pt', map_location=device))
 
     if evaluate_only:
-        _, val_loss = evaluate(
+        _, val_bleu = evaluate(
             encoder=encoder,
             decoder=decoder,
             data_loader=val_data_loader,
-            tokenizer=target_tokenizer,
+            source_tokenizer=source_tokenizer,
+            target_tokenizer=target_tokenizer,
             criterion=nn.NLLLoss(ignore_index=target_tokenizer.processor.pad_id())
         )
     else:
