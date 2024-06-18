@@ -74,7 +74,7 @@ class LanguagePairsDatasets:
         """
         start = 0
         for i in range(len(self._datasets)):
-            if idx < start + len(self._datasets[i]):
+            if idx <= start + len(self._datasets[i]):
                 return self._datasets[i]
             else:
                 start += len(self._datasets[i])
