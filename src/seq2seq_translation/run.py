@@ -219,6 +219,7 @@ if __name__ == '__main__':
     parser.add_argument('--decoder_hidden_dim', default=256, type=int)
     parser.add_argument('--attention_dim', default=256, type=int)
     parser.add_argument('--use_wandb', action='store_true', default=False)
+    parser.add_argument('--wandb_api_key', default=None)
     parser.add_argument('--seed', type=int, default=None)
     parser.add_argument('--model_weights_path', default=None)
     parser.add_argument('--evaluate_only', action='store_true', default=False)
@@ -238,6 +239,9 @@ if __name__ == '__main__':
         raise ValueError(f'Unknown attention type {args.attention_type}')
 
     os.environ['USE_WANDB'] = str(args.use_wandb)
+    if args.use_wandb:
+        if args.wandb_api_key is None:
+            raise ValueError('Must provide wandb_api_key')
 
     if args.dataset_sample_fracs:
         dataset_sample_fracs = [float(x) for x in args.dataset_sample_fracs.split(' ')]
