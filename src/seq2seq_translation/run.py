@@ -242,7 +242,7 @@ if __name__ == '__main__':
     if args.use_wandb:
         if args.wandb_api_key is None:
             raise ValueError('Must provide wandb_api_key')
-
+        os.environ['WANDB_API_KEY'] = args.wandb_api_key
     if args.dataset_sample_fracs:
         dataset_sample_fracs = [float(x) for x in args.dataset_sample_fracs.split(' ')]
     else:
