@@ -33,7 +33,7 @@ class LanguagePairsDataset(abc.ABC):
         return
 
     @abc.abstractmethod
-    def __getitem__(self, idx) -> Tuple[str, str]:
+    def __getitem__(self, idx) -> Tuple[str, str, str]:
         raise NotImplementedError
 
     @abc.abstractmethod

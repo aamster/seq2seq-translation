@@ -29,14 +29,14 @@ class SentencePairsDataset(Dataset):
 
     def __getitem__(self, idx):
         idx = self._idxs[idx]
-        source, target = self._datasets[idx]
+        source, target, dataset_name = self._datasets[idx]
         source_ids = self._source_tokenizer.processor.encode(source)
         target_ids = self._target_tokenizer.processor.encode(target)
 
         source = self._transform(source_ids)
         target = self._transform(target_ids)
 
-        return source, target
+        return source, target, dataset_name
 
     def _get_transform(self, max_len: Optional[int] = None):
         """

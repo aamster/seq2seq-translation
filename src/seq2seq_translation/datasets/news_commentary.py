@@ -42,7 +42,7 @@ class NewsCommentaryDataset(LanguagePairsDataset):
 
         _download_and_extract(url=url, gzip_path=Path(f'{out_path}.tsv.gz'), out_path=out_path)
 
-    def __getitem__(self, idx) -> Tuple[str, str]:
+    def __getitem__(self, idx) -> Tuple[str, str, str]:
         with open(self._source_path, 'r') as f:
             f.seek(self._source_index_sampled[idx])
             source = f.readline()
@@ -53,7 +53,7 @@ class NewsCommentaryDataset(LanguagePairsDataset):
             f.seek(0)
 
         # note: reversing, since we want *->en rather than en->*
-        return target, source
+        return target, source, 'news commentary'
 
     def __len__(self):
         return len(self._source_index_sampled)

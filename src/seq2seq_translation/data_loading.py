@@ -30,7 +30,7 @@ class CollateFunction:
         self._pad_token_id = pad_token_id
 
     def __call__(self, batch):
-        src_batch, target_batch = zip(*batch)
+        src_batch, target_batch, dataset_name = zip(*batch)
         src_batch_padded = pad_sequence(
             src_batch,
             batch_first=True,
@@ -41,4 +41,4 @@ class CollateFunction:
             batch_first=True,
             padding_value=self._pad_token_id
         )
-        return src_batch_padded, target_batch_padded
+        return src_batch_padded, target_batch_padded, dataset_name

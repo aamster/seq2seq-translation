@@ -58,7 +58,7 @@ class Europarl(LanguagePairsDataset):
             f.seek(self._target_index_sampled[idx])
             target = f.readline()
             f.seek(0)
-        return source, target
+        return source, target, 'europarl'
 
     @property
     def source_path(self) -> Path:

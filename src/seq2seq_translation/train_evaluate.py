@@ -30,7 +30,7 @@ def train_epoch(
     total_loss = 0
     total_bleu_score = 0
     for data in tqdm(dataloader, total=len(dataloader), desc=f'train epoch {epoch}'):
-        input_tensor, target_tensor = data
+        input_tensor, target_tensor, _ = data
 
         if torch.cuda.is_available():
             input_tensor = input_tensor.cuda()
@@ -113,7 +113,7 @@ def get_pred(
     target_tokenizer: SentencePieceTokenizer,
     idx: int
 ):
-    input_tensor, target_tensor = data_loader.dataset[idx]
+    input_tensor, target_tensor, dataset_name = data_loader.dataset[idx]
 
     if torch.cuda.is_available():
         input_tensor = input_tensor.cuda()
@@ -128,7 +128,7 @@ def get_pred(
     input = source_tokenizer.decode(input_tensor)
     pred = target_tokenizer.decode(decoded_ids)
     target = target_tokenizer.decode(target_tensor)
-    return input, pred, target
+    return input, pred, target, dataset_name
 
 
 def _inference(encoder, decoder, input_tensor):
@@ -165,7 +165,7 @@ def evaluate(encoder, decoder, data_loader: DataLoader, source_tokenizer: Senten
     bleu_scores = torch.zeros(len(data_loader))
 
     for batch_idx, data in tqdm(enumerate(data_loader), total=len(data_loader), desc='eval'):
-        input_tensor, target_tensor = data
+        input_tensor, target_tensor, _ = data
 
         if torch.cuda.is_available():
             input_tensor = input_tensor.cuda()
@@ -185,7 +185,7 @@ def evaluate(encoder, decoder, data_loader: DataLoader, source_tokenizer: Senten
             [[x] for x in target_tokenizer.decode(target_tensor)],
         )
 
-    decoded_input, predicted_target, decoded_target = get_pred(
+    decoded_input, predicted_target, decoded_target, dataset_name = get_pred(
         encoder=encoder,
         decoder=decoder,
         data_loader=data_loader,
@@ -194,6 +194,7 @@ def evaluate(encoder, decoder, data_loader: DataLoader, source_tokenizer: Senten
         idx=torch.randint(low=0, high=len(data_loader.dataset), size=(1,))[0].item()
 
     )
+    print('dataset:', dataset_name)
     print('input:', decoded_input)
     print('target:', decoded_target)
     print('pred:', predicted_target)
