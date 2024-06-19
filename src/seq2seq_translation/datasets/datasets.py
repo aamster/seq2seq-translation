@@ -3,6 +3,7 @@ from pathlib import Path
 from typing import Optional, List
 
 import numpy as np
+from tqdm import tqdm
 
 from seq2seq_translation.datasets.europarl import Europarl
 from seq2seq_translation.datasets.news_commentary import NewsCommentaryDataset
@@ -46,20 +47,20 @@ class LanguagePairsDatasets:
         return sum([len(x) for x in self._datasets])
 
     def create_source_tokenizer_train_set(self, source_tokenizer_path: Path):
+        if source_tokenizer_path.exists():
+            return
         os.makedirs(source_tokenizer_path.parent, exist_ok=True)
         with open(source_tokenizer_path, 'wb') as f:
-            for dataset in self._datasets:
-                with open(dataset.source_path, 'rb') as ds_source_f:
-                    for line in ds_source_f:
-                        f.write(line)
+            for i in tqdm(range(len(self)), desc='Creating source tokenizer train set'):
+                f.write(self[i][0].encode('utf-8'))
 
     def create_target_tokenizer_train_set(self, target_tokenizer_path: Path):
+        if target_tokenizer_path.exists():
+            return
         os.makedirs(target_tokenizer_path.parent, exist_ok=True)
         with open(target_tokenizer_path, 'wb') as f:
-            for dataset in self._datasets:
-                with open(dataset.target_path, 'rb') as ds_target_f:
-                    for line in ds_target_f:
-                        f.write(line)
+            for i in tqdm(range(len(self)), desc='Creating target tokenizer train set'):
+                f.write(self[i][1].encode('utf-8'))
 
     def _get_dataset_for_idx(self, idx: int):
         """
