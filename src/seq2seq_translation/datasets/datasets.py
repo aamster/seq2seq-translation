@@ -61,10 +61,6 @@ class LanguagePairsDatasets:
                     for line in ds_target_f:
                         f.write(line)
 
-    @property
-    def target_paths(self) -> List[Path]:
-        return [x.target_path for x in self._datasets]
-
     def _get_dataset_for_idx(self, idx: int):
         """
         Gets the dataset corresponding to `idx`

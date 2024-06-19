@@ -68,8 +68,10 @@ class NewsCommentaryDataset(LanguagePairsDataset):
 
     @property
     def source_path(self) -> Path:
-        return self._source_path
+        # Swapping bc most datasets are en-* and we want en to be target
+        return self._target_path
 
     @property
     def target_path(self) -> Path:
-        return self._target_path
+        # Swapping bc most datasets are en-* and we want en to be target
+        return self._source_path
