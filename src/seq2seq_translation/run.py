@@ -1,5 +1,6 @@
 import inspect
 import os
+import subprocess
 from argparse import ArgumentParser
 from pathlib import Path
 from typing import Optional
@@ -63,7 +64,8 @@ def main(
             config={k: v for k, v in locals().items() if k in signature and k not in (
             'data_path', 'model_weights_out_dir', 'model_weights_path', 'evaluate_only')},
         )
-        print(f'wandb url', wandb_run.url)
+        git_commit = subprocess.check_output(['git', 'rev-parse', 'HEAD']).decode('ascii').strip()
+        wandb.config.update({"git_commit": git_commit})
 
     datasets = LanguagePairsDatasets(
         out_dir=Path(datasets_out_dir),
