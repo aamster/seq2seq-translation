@@ -1,6 +1,5 @@
 import inspect
 import os
-import subprocess
 from argparse import ArgumentParser
 from pathlib import Path
 from typing import Optional
@@ -49,7 +48,8 @@ def main(
         source_vocab_length: int = 13000,
         target_vocab_length: int = 13000,
         train_frac: float = 0.8,
-        dataset_sample_fracs: Optional[list[float]] = None
+        dataset_sample_fracs: Optional[list[float]] = None,
+        git_commit: Optional[str] = None
 ):
     if seed is not None:
         np.random.seed(seed)
@@ -64,7 +64,6 @@ def main(
             config={k: v for k, v in locals().items() if k in signature and k not in (
             'data_path', 'model_weights_out_dir', 'model_weights_path', 'evaluate_only')},
         )
-        git_commit = subprocess.check_output(['git', 'rev-parse', 'HEAD']).decode('ascii').strip()
         wandb.config.update({"git_commit": git_commit})
 
     datasets = LanguagePairsDatasets(
@@ -235,6 +234,7 @@ if __name__ == '__main__':
     parser.add_argument('--sentence_piece_model_save_dir', required=True)
     parser.add_argument('--train_frac', type=float, default=0.8)
     parser.add_argument('--dataset_sample_fracs', default=None, help='amount to sample for each dataset. Should be of form "0.7 1.0"')
+    parser.add_argument('--git_commit', default=None)
     args = parser.parse_args()
 
     if not any(args.attention_type == x.value for x in AttentionType):
@@ -272,5 +272,6 @@ if __name__ == '__main__':
          sentence_piece_model_save_dir=args.sentence_piece_model_save_dir,
          datasets_out_dir=args.datasets_out_dir,
          train_frac=args.train_frac,
-         dataset_sample_fracs=dataset_sample_fracs
+         dataset_sample_fracs=dataset_sample_fracs,
+         git_commit=args.git_commit
          )
