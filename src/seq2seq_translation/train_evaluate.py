@@ -4,9 +4,7 @@ import time
 from pathlib import Path
 
 import torch
-import torch.nn.functional as F
 import wandb
-from matplotlib import pyplot as plt
 from torch import optim, nn
 from torch.utils.data import DataLoader
 from torchmetrics.text import BLEUScore
@@ -96,13 +94,6 @@ def timeSince(since, percent):
     es = s / (percent)
     rs = es - s
     return '%s (- %s)' % (asMinutes(s), asMinutes(rs))
-
-
-def showPlot(train_loss, val_loss):
-    plt.plot(train_loss, label='train')
-    plt.plot(val_loss, label='val')
-    plt.legend()
-    plt.show()
 
 
 def get_pred(
