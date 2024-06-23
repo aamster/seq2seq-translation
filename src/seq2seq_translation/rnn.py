@@ -160,6 +160,7 @@ class AttnDecoderRNN(DecoderRNN):
         dropout_p=0.1,
         encoder_bidirectional: bool = False,
         freeze_embedding_layer: bool = False,
+        embedding_dim: int = 128
     ):
         super().__init__(
             hidden_size=hidden_size,
@@ -172,7 +173,8 @@ class AttnDecoderRNN(DecoderRNN):
                 2*encoder_output_size if encoder_bidirectional else encoder_output_size),
             pad_idx=pad_idx,
             num_embeddings=num_embeddings,
-            sos_token_id=sos_token_id
+            embedding_dim=embedding_dim,
+            sos_token_id=sos_token_id,
         )
         if attention_type == AttentionType.BahdanauAttention:
             self.attention = BahdanauAttention(

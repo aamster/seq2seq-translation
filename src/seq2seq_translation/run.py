@@ -49,7 +49,8 @@ def main(
         target_vocab_length: int = 13000,
         train_frac: float = 0.8,
         dataset_sample_fracs: Optional[list[float]] = None,
-        git_commit: Optional[str] = None
+        git_commit: Optional[str] = None,
+        embedding_size: int = 128
 ):
     if seed is not None:
         np.random.seed(seed)
@@ -144,6 +145,7 @@ def main(
         bidirectional=encoder_bidirectional,
         freeze_embedding_layer=freeze_embedding_layer,
         pad_idx=source_tokenizer.processor.pad_id(),
+        embedding_dim=embedding_size
     ).to(device)
 
     if use_attention:
@@ -158,7 +160,8 @@ def main(
             encoder_output_size=encoder_hidden_dim,
             pad_idx=source_tokenizer.processor.pad_id(),
             num_embeddings=target_tokenizer.processor.vocab_size(),
-            sos_token_id=source_tokenizer.processor.bos_id()
+            sos_token_id=source_tokenizer.processor.bos_id(),
+            embedding_dim=embedding_size
         ).to(device)
     else:
         decoder = DecoderRNN(
@@ -172,6 +175,7 @@ def main(
             num_embeddings=target_tokenizer.processor.vocab_size(),
             sos_token_id=source_tokenizer.processor.bos_id(),
             context_size=2 * encoder_hidden_dim if encoder_bidirectional else encoder_hidden_dim,
+            embedding_dim=embedding_size
         ).to(device)
 
     if model_weights_path is not None:
@@ -213,6 +217,7 @@ if __name__ == '__main__':
     parser.add_argument('--datasets_out_dir', required=True)
     parser.add_argument('--n_epochs', type=int, default=1000)
     parser.add_argument('--limit', type=float, default=None)
+    parser.add_argument('--embedding_dim', type=int, default=128)
     parser.add_argument('--use_pretrained_embeddings', action='store_true', default=False)
     parser.add_argument('--freeze_embedding_layer', action='store_true', default=False)
     parser.add_argument('--attention_type', default='CosineSimilarityAttention')
@@ -273,5 +278,6 @@ if __name__ == '__main__':
          datasets_out_dir=args.datasets_out_dir,
          train_frac=args.train_frac,
          dataset_sample_fracs=dataset_sample_fracs,
-         git_commit=args.git_commit
+         git_commit=args.git_commit,
+         embedding_size=args.embedding_dim
          )
