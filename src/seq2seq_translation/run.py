@@ -312,5 +312,6 @@ if __name__ == '__main__':
          learning_rate=args.learning_rate,
          dropout=args.dropout,
          weight_decay=args.weight_decay,
-         decay_learning_rate=args.decay_learning_rate
+         decay_learning_rate=args.decay_learning_rate,
+         compile=args.compile
          )
