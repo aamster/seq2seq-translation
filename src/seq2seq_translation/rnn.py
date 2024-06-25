@@ -15,22 +15,37 @@ class EncoderRNN(nn.Module):
         pad_idx: Optional[int] = None,
         hidden_size=128,
         embedding_dim=128,
-        dropout_p=0.1,
         bidirectional: bool = False,
-        freeze_embedding_layer: bool = False
+        freeze_embedding_layer: bool = False,
+        num_layers: int = 1,
+        dropout: float = 0.0
     ):
         super(EncoderRNN, self).__init__()
-        self.hidden_size = hidden_size
 
         self.embedding = nn.Embedding(num_embeddings=input_size, embedding_dim=embedding_dim)
-        self.gru = nn.GRU(input_size=embedding_dim, hidden_size=hidden_size, batch_first=True, bidirectional=bidirectional)
-        self.dropout = nn.Dropout(dropout_p)
+        self.gru = nn.GRU(input_size=embedding_dim, hidden_size=hidden_size, batch_first=True, bidirectional=bidirectional, num_layers=num_layers)
+        self.dropout = nn.Dropout(dropout)
 
     def forward(self, input):
         embedded = self.embedding(input)
         embedded = self.dropout(embedded)
         output, hidden = self.gru(embedded)
         return output, hidden
+
+    @property
+    def hidden_size(self):
+        hidden_size = self.gru.hidden_size
+        if self.gru.bidirectional:
+            hidden_size *= 2
+        hidden_size *= self.gru.num_layers
+        return hidden_size
+
+    @property
+    def output_size(self):
+        output_size = self.gru.hidden_size
+        if self.gru.bidirectional:
+            output_size *= 2
+        return output_size
 
 
 class DecoderRNN(nn.Module):
@@ -39,15 +54,17 @@ class DecoderRNN(nn.Module):
         hidden_size,
         output_size,
         max_len: int,
-        encoder_hidden_size: int,
+        encoder_output_size: int,
         sos_token_id: int,
         num_embeddings: int,
         pad_idx: Optional[int] = None,
         use_context_vector: bool = True,
-        dropout_p=0.1,
         freeze_embedding_layer: bool = False,
         embedding_dim: int = 128,
-        context_size: int = 128
+        context_size: int = 128,
+        num_layers: int = 1,
+        dropout: float = 0.0,
+
     ):
         super(DecoderRNN, self).__init__()
         self.embedding = nn.Embedding(num_embeddings=num_embeddings,
@@ -58,9 +75,9 @@ class DecoderRNN(nn.Module):
         else:
             gru_input_size = embedding_dim
 
-        self.gru = nn.GRU(gru_input_size, hidden_size, batch_first=True)
-        self.dropout = nn.Dropout(dropout_p)
-        self.Wh = nn.Linear(encoder_hidden_size, hidden_size)
+        self.gru = nn.GRU(gru_input_size, hidden_size, batch_first=True, num_layers=num_layers)
+        self.dropout = nn.Dropout(dropout)
+        self.Wh = nn.Linear(encoder_output_size, hidden_size)
         self.out = nn.Linear(hidden_size, output_size)
         self._use_context_vector = use_context_vector
         self._max_len = max_len
@@ -113,7 +130,7 @@ class DecoderRNN(nn.Module):
     def _initialize_forward(self, encoder_hidden: torch.Tensor):
         batch_size = encoder_hidden.shape[1]
 
-        decoder_hidden = encoder_hidden.permute(1, 0, 2).contiguous().view(1, batch_size, -1)
+        decoder_hidden = encoder_hidden.permute(1, 0, 2).contiguous().view(self.gru.num_layers, batch_size, -1)
         decoder_hidden = self.Wh(decoder_hidden)
         decoder_input = torch.empty(
             batch_size, 1,
@@ -142,6 +159,7 @@ class DecoderRNN(nn.Module):
 
         output, hidden = self.gru(gru_input, hidden)
         output = self.out(output)
+        output = self.dropout(output)
         return output, hidden
 
 
@@ -157,24 +175,25 @@ class AttnDecoderRNN(DecoderRNN):
         sos_token_id: int,
         pad_idx: Optional[int] = None,
         attention_size: int = 256,
-        dropout_p=0.1,
         encoder_bidirectional: bool = False,
         freeze_embedding_layer: bool = False,
-        embedding_dim: int = 128
+        embedding_dim: int = 128,
+        num_layers: int = 1,
+        dropout: float = 0.0
     ):
         super().__init__(
             hidden_size=hidden_size,
             output_size=output_size,
             max_len=max_len,
-            dropout_p=dropout_p,
+            dropout=dropout,
             freeze_embedding_layer=freeze_embedding_layer,
             context_size=attention_size,
-            encoder_hidden_size=(
-                2*encoder_output_size if encoder_bidirectional else encoder_output_size),
+            encoder_output_size=encoder_output_size,
             pad_idx=pad_idx,
             num_embeddings=num_embeddings,
             embedding_dim=embedding_dim,
             sos_token_id=sos_token_id,
+            num_layers=num_layers
         )
         if attention_type == AttentionType.BahdanauAttention:
             self.attention = BahdanauAttention(
@@ -183,10 +202,10 @@ class AttnDecoderRNN(DecoderRNN):
             )
         elif attention_type == AttentionType.CosineSimilarityAttention:
             self.attention = CosineSimilarityAttention(
-                encoder_output_size=(
-                    2 * encoder_output_size if encoder_bidirectional else encoder_output_size),
-                decoder_hidden_size=hidden_size,
-                Dv=attention_size
+                encoder_output_size=encoder_output_size,
+                query_dim=hidden_size,
+                Dv=attention_size,
+                dropout=dropout
             )
         else:
             raise ValueError(f'Unknown attention type {attention_type}')

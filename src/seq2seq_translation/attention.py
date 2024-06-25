@@ -32,14 +32,16 @@ class CosineSimilarityAttention(nn.Module):
     def __init__(
         self,
         encoder_output_size: int,
-        decoder_hidden_size: int,
-        Dv: int
+        query_dim: int,
+        Dv: int,
+        dropout: float = 0.0
     ):
         super().__init__()
         Dx = encoder_output_size
-        Dq = decoder_hidden_size
+        Dq = query_dim
         self.Wk = nn.Linear(Dx, Dq)
         self.Wv = nn.Linear(Dx, Dv)
+        self.dropout = nn.Dropout(dropout)
 
     def forward(self, query, x):
         """
@@ -51,10 +53,12 @@ class CosineSimilarityAttention(nn.Module):
         keys = self.Wk(x)
         values = self.Wv(x)
 
+        query = query[-1].unsqueeze(0)    # take only the last hidden layer
         Dq = query.shape[-1]
         query = query.squeeze(0).unsqueeze(1)
         scores = torch.bmm(query, keys.transpose(1, 2)) / math.sqrt(Dq)
         attention = F.softmax(scores, dim=-1)
+        attention = self.dropout(attention)
         Y = attention.bmm(values)
         return Y
 

@@ -61,6 +61,9 @@ def train_epoch(
         )
         loss.backward()
 
+        # torch.nn.utils.clip_grad_norm_(encoder.parameters(), 1.0)
+        # torch.nn.utils.clip_grad_norm_(decoder.parameters(), 1.0)
+
         with torch.no_grad():
             _, topi = decoder_outputs.topk(1)
             decoded_ids = topi.squeeze()
@@ -207,7 +210,8 @@ def train(
         target_tokenizer: SentencePieceTokenizer,
         model_weights_out_dir: str,
         learning_rate=0.001,
-        weight_decay=0.0
+        weight_decay=0.0,
+        early_stopping: bool = True
 ):
     os.makedirs(model_weights_out_dir, exist_ok=True)
 
@@ -250,6 +254,6 @@ def train(
             best_bleu_score = val_bleu_score
             torch.save(encoder.state_dict(), Path(model_weights_out_dir) / 'encoder.pt')
             torch.save(decoder.state_dict(), Path(model_weights_out_dir) / 'decoder.pt')
-        else:
+        elif early_stopping:
             print('Stopping due to early stopping')
             return

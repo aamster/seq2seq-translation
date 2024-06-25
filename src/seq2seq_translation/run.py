@@ -50,7 +50,10 @@ def main(
         train_frac: float = 0.8,
         dataset_sample_fracs: Optional[list[float]] = None,
         git_commit: Optional[str] = None,
-        embedding_size: int = 128
+        embedding_size: int = 128,
+        num_rnn_layers: int = 1,
+        use_early_stopping: bool = True,
+        dropout: float = 0.0
 ):
     if seed is not None:
         np.random.seed(seed)
@@ -145,7 +148,9 @@ def main(
         bidirectional=encoder_bidirectional,
         freeze_embedding_layer=freeze_embedding_layer,
         pad_idx=source_tokenizer.processor.pad_id(),
-        embedding_dim=embedding_size
+        embedding_dim=embedding_size,
+        num_layers=num_rnn_layers,
+        dropout=dropout
     ).to(device)
 
     if use_attention:
@@ -157,11 +162,13 @@ def main(
             max_len=len(train_dset[datasets.get_max_target_length_index(from_indexes=train_idxs)][1]),
             freeze_embedding_layer=freeze_embedding_layer,
             attention_type=attention_type,
-            encoder_output_size=encoder_hidden_dim,
+            encoder_output_size=encoder.output_size,
             pad_idx=source_tokenizer.processor.pad_id(),
             num_embeddings=target_tokenizer.processor.vocab_size(),
             sos_token_id=source_tokenizer.processor.bos_id(),
-            embedding_dim=embedding_size
+            embedding_dim=embedding_size,
+            num_layers=num_rnn_layers,
+            dropout=dropout
         ).to(device)
     else:
         decoder = DecoderRNN(
@@ -170,12 +177,13 @@ def main(
             max_len=len(train_dset[datasets.get_max_target_length_index(from_indexes=train_idxs)][1]),
             freeze_embedding_layer=freeze_embedding_layer,
             pad_idx=source_tokenizer.processor.pad_id(),
-            encoder_hidden_size=2 * encoder_hidden_dim if encoder_bidirectional else
-            encoder_hidden_dim,
+            encoder_output_size=encoder.output_size,
             num_embeddings=target_tokenizer.processor.vocab_size(),
             sos_token_id=source_tokenizer.processor.bos_id(),
-            context_size=2 * encoder_hidden_dim if encoder_bidirectional else encoder_hidden_dim,
-            embedding_dim=embedding_size
+            context_size=encoder.hidden_size,
+            embedding_dim=embedding_size,
+            num_layers=num_rnn_layers,
+            dropout=dropout
         ).to(device)
 
     if model_weights_path is not None:
@@ -202,7 +210,9 @@ def main(
             model_weights_out_dir=model_weights_out_dir,
             n_epochs=n_epochs,
             source_tokenizer=source_tokenizer,
-            target_tokenizer=target_tokenizer
+            target_tokenizer=target_tokenizer,
+            early_stopping=use_early_stopping,
+            learning_rate=learning_rate
         )
 
 
@@ -240,6 +250,9 @@ if __name__ == '__main__':
     parser.add_argument('--train_frac', type=float, default=0.8)
     parser.add_argument('--dataset_sample_fracs', default=None, help='amount to sample for each dataset. Should be of form "0.7 1.0"')
     parser.add_argument('--git_commit', default=None)
+    parser.add_argument('--num_rnn_layers', type=int, default=1)
+    parser.add_argument('--use_early_stopping', action='store_true', default=False)
+    parser.add_argument('--dropout', type=float, default=0.0)
     args = parser.parse_args()
 
     if not any(args.attention_type == x.value for x in AttentionType):
@@ -279,5 +292,9 @@ if __name__ == '__main__':
          train_frac=args.train_frac,
          dataset_sample_fracs=dataset_sample_fracs,
          git_commit=args.git_commit,
-         embedding_size=args.embedding_dim
+         embedding_size=args.embedding_dim,
+         num_rnn_layers=args.num_rnn_layers,
+         use_early_stopping=args.use_early_stopping,
+         learning_rate=args.learning_rate,
+         dropout=args.dropout
          )
