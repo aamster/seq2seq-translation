@@ -61,8 +61,8 @@ def train_epoch(
         )
         loss.backward()
 
-        # torch.nn.utils.clip_grad_norm_(encoder.parameters(), 1.0)
-        # torch.nn.utils.clip_grad_norm_(decoder.parameters(), 1.0)
+        torch.nn.utils.clip_grad_norm_(encoder.parameters(), 1.0)
+        torch.nn.utils.clip_grad_norm_(decoder.parameters(), 1.0)
 
         with torch.no_grad():
             _, topi = decoder_outputs.topk(1)

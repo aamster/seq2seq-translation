@@ -53,7 +53,8 @@ def main(
         embedding_size: int = 128,
         num_rnn_layers: int = 1,
         use_early_stopping: bool = True,
-        dropout: float = 0.0
+        dropout: float = 0.0,
+        weight_decay: float = 0.0
 ):
     if seed is not None:
         np.random.seed(seed)
@@ -150,7 +151,7 @@ def main(
         pad_idx=source_tokenizer.processor.pad_id(),
         embedding_dim=embedding_size,
         num_layers=num_rnn_layers,
-        dropout=dropout
+        dropout=dropout,
     ).to(device)
 
     if use_attention:
@@ -212,7 +213,8 @@ def main(
             source_tokenizer=source_tokenizer,
             target_tokenizer=target_tokenizer,
             early_stopping=use_early_stopping,
-            learning_rate=learning_rate
+            learning_rate=learning_rate,
+            weight_decay=weight_decay
         )
 
 
@@ -253,6 +255,7 @@ if __name__ == '__main__':
     parser.add_argument('--num_rnn_layers', type=int, default=1)
     parser.add_argument('--use_early_stopping', action='store_true', default=False)
     parser.add_argument('--dropout', type=float, default=0.0)
+    parser.add_argument('--weight_decay', default=0.0, type=float)
     args = parser.parse_args()
 
     if not any(args.attention_type == x.value for x in AttentionType):
@@ -296,5 +299,6 @@ if __name__ == '__main__':
          num_rnn_layers=args.num_rnn_layers,
          use_early_stopping=args.use_early_stopping,
          learning_rate=args.learning_rate,
-         dropout=args.dropout
+         dropout=args.dropout,
+         weight_decay=args.weight_decay
          )
