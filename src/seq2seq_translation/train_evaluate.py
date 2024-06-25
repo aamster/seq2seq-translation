@@ -1,7 +1,9 @@
 import math
 import os
 import time
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Optional
 
 import torch
 import wandb
@@ -14,6 +16,14 @@ from seq2seq_translation.tokenization.sentencepiece_tokenizer import SentencePie
 from seq2seq_translation.rnn import EncoderRNN, AttnDecoderRNN, DecoderRNN
 
 
+@dataclass
+class LearningRateDecayConfig:
+    lr_decay_iters: int # should be ~= max_iters per Chinchilla
+    learning_rate: float = 5e-4
+    warmup_iters: int = 2000
+    min_lr: float = 5e-5 # should be ~= learning_rate/10 per Chinchilla
+
+
 def train_epoch(
     dataloader,
     encoder: EncoderRNN,
@@ -22,17 +32,31 @@ def train_epoch(
     decoder_optimizer,
     criterion,
     epoch: int,
-    target_tokenizer: SentencePieceTokenizer
+    target_tokenizer: SentencePieceTokenizer,
+    decay_learning_rate: bool = True,
+    learning_rate_decay_config: Optional[LearningRateDecayConfig] = None
 ):
 
     total_loss = 0
     total_bleu_score = 0
-    for data in tqdm(dataloader, total=len(dataloader), desc=f'train epoch {epoch}'):
+    for epoch_iter, data in enumerate(tqdm(dataloader, total=len(dataloader), desc=f'train epoch {epoch}')):
         input_tensor, target_tensor, _ = data
 
         if torch.cuda.is_available():
             input_tensor = input_tensor.cuda()
             target_tensor = target_tensor.cuda()
+
+        if decay_learning_rate:
+            lr = _get_lr(
+                iteration=(epoch-1)*len(dataloader)+epoch_iter,
+                warmup_iters=learning_rate_decay_config.warmup_iters,
+                learning_rate=learning_rate_decay_config.learning_rate,
+                lr_decay_iters=learning_rate_decay_config.lr_decay_iters,
+                min_lr=learning_rate_decay_config.min_lr
+            )
+            for optimizer in (encoder_optimizer, decoder_optimizer):
+                for param_group in optimizer.param_groups:
+                    param_group['lr'] = lr
 
         encoder_optimizer.zero_grad()
         decoder_optimizer.zero_grad()
@@ -211,12 +235,13 @@ def train(
         model_weights_out_dir: str,
         learning_rate=0.001,
         weight_decay=0.0,
-        early_stopping: bool = True
+        early_stopping: bool = True,
+        decay_learning_rate: bool = True
 ):
     os.makedirs(model_weights_out_dir, exist_ok=True)
 
-    encoder_optimizer = optim.Adam(encoder.parameters(), lr=learning_rate, weight_decay=weight_decay)
-    decoder_optimizer = optim.Adam(decoder.parameters(), lr=learning_rate, weight_decay=weight_decay)
+    encoder_optimizer = optim.AdamW(encoder.parameters(), lr=learning_rate, weight_decay=weight_decay)
+    decoder_optimizer = optim.AdamW(decoder.parameters(), lr=learning_rate, weight_decay=weight_decay)
     criterion = nn.NLLLoss(ignore_index=target_tokenizer.processor.pad_id())
 
     best_bleu_score = -float('inf')
@@ -230,7 +255,13 @@ def train(
             decoder_optimizer=decoder_optimizer,
             criterion=criterion,
             epoch=epoch,
-            target_tokenizer=target_tokenizer
+            target_tokenizer=target_tokenizer,
+            decay_learning_rate=decay_learning_rate,
+            learning_rate_decay_config=LearningRateDecayConfig(
+                learning_rate=learning_rate,
+                lr_decay_iters=len(train_dataloader)*n_epochs,
+                min_lr=learning_rate/10
+            )
         )
         _, val_bleu_score = evaluate(
             encoder=encoder,
@@ -257,3 +288,18 @@ def train(
         elif early_stopping:
             print('Stopping due to early stopping')
             return
+
+
+# https://github.com/karpathy/nanoGPT/blob/master/train.py
+def _get_lr(iteration: int, warmup_iters: int, learning_rate: float, lr_decay_iters: int, min_lr):
+    # 1) linear warmup for warmup_iters steps
+    if iteration < warmup_iters:
+        return learning_rate * iteration / warmup_iters
+    # 2) if it > lr_decay_iters, return min learning rate
+    if iteration > lr_decay_iters:
+        return min_lr
+    # 3) in between, use cosine decay down to min learning rate
+    decay_ratio = (iteration - warmup_iters) / (lr_decay_iters - warmup_iters)
+    assert 0 <= decay_ratio <= 1
+    coeff = 0.5 * (1.0 + math.cos(math.pi * decay_ratio)) # coeff ranges 0..1
+    return min_lr + coeff * (learning_rate - min_lr)

@@ -54,7 +54,9 @@ def main(
         num_rnn_layers: int = 1,
         use_early_stopping: bool = True,
         dropout: float = 0.0,
-        weight_decay: float = 0.0
+        weight_decay: float = 0.0,
+        compile: bool = False,
+        decay_learning_rate: bool = True
 ):
     if seed is not None:
         np.random.seed(seed)
@@ -193,6 +195,12 @@ def main(
         decoder.load_state_dict(
             torch.load(Path(model_weights_path) / 'decoder.pt', map_location=device))
 
+    if compile:
+        # requires PyTorch 2.0
+        print("compiling the model... (takes a ~minute)")
+        encoder = torch.compile(encoder)
+        decoder = torch.compile(decoder)
+
     if evaluate_only:
         _, val_bleu = evaluate(
             encoder=encoder,
@@ -214,7 +222,8 @@ def main(
             target_tokenizer=target_tokenizer,
             early_stopping=use_early_stopping,
             learning_rate=learning_rate,
-            weight_decay=weight_decay
+            weight_decay=weight_decay,
+            decay_learning_rate=decay_learning_rate
         )
 
 
@@ -256,6 +265,8 @@ if __name__ == '__main__':
     parser.add_argument('--use_early_stopping', action='store_true', default=False)
     parser.add_argument('--dropout', type=float, default=0.0)
     parser.add_argument('--weight_decay', default=0.0, type=float)
+    parser.add_argument('--compile', default=False, action='store_true')
+    parser.add_argument('--decay_learning_rate', default=False, action='store_true')
     args = parser.parse_args()
 
     if not any(args.attention_type == x.value for x in AttentionType):
@@ -300,5 +311,6 @@ if __name__ == '__main__':
          use_early_stopping=args.use_early_stopping,
          learning_rate=args.learning_rate,
          dropout=args.dropout,
-         weight_decay=args.weight_decay
+         weight_decay=args.weight_decay,
+         decay_learning_rate=args.decay_learning_rate
          )
