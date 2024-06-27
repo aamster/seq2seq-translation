@@ -67,6 +67,9 @@ def estimate_performance_metrics(
 
         for k in range(eval_iters):
             input_tensor, target_tensor, _ = next(data_loader_iter)
+            if torch.cuda.is_available():
+                input_tensor = input_tensor.cuda()
+                target_tensor = target_tensor.cuda()
 
             if data_loader_name == 'train':
                 decoder_outputs, _, _, decoded_ids = _inference(
