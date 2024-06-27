@@ -184,17 +184,16 @@ def train_epoch(
 
         encoder_outputs, encoder_hidden = encoder(input_tensor)
 
-        if isinstance(decoder, AttnDecoderRNN):
-            decoder_outputs, _, _ = decoder(
-                encoder_outputs=encoder_outputs,
-                encoder_hidden=encoder_hidden,
-                target_tensor=target_tensor
-            )
+        decoder_res = decoder(
+            encoder_outputs=encoder_outputs,
+            encoder_hidden=encoder_hidden,
+            target_tensor=target_tensor
+        )
+
+        if len(decoder_res) == 3:
+            decoder_outputs, decoder_hidden, decoder_attn = decoder_res
         else:
-            decoder_outputs, _ = decoder(
-                encoder_hidden=encoder_hidden,
-                target_tensor=target_tensor
-            )
+            decoder_outputs, decoder_hidden = decoder_res
 
         batch_size = target_tensor.shape[0]
         C = decoder_outputs.shape[-1]
@@ -262,16 +261,11 @@ def get_pred(
 def _inference(encoder, decoder, input_tensor, target_tensor: Optional[torch.Tensor] = None):
     encoder_outputs, encoder_hidden = encoder(input_tensor)
 
-    if isinstance(decoder, AttnDecoderRNN):
-        decoder_res = decoder(
-            encoder_outputs=encoder_outputs,
-            encoder_hidden=encoder_hidden,
-            target_tensor=target_tensor
-        )
-    elif isinstance(decoder, DecoderRNN):
-        decoder_res = decoder(encoder_hidden=encoder_hidden)
-    else:
-        raise ValueError(f'unknown decoder type {type(decoder)}')
+    decoder_res = decoder(
+        encoder_outputs=encoder_outputs,
+        encoder_hidden=encoder_hidden,
+        target_tensor=target_tensor
+    )
 
     if len(decoder_res) == 3:
         decoder_outputs, decoder_hidden, decoder_attn = decoder_res
