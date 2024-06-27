@@ -52,11 +52,12 @@ def main(
         git_commit: Optional[str] = None,
         embedding_size: int = 128,
         num_rnn_layers: int = 1,
-        use_early_stopping: bool = True,
         dropout: float = 0.0,
         weight_decay: float = 0.0,
         compile: bool = False,
-        decay_learning_rate: bool = True
+        decay_learning_rate: bool = True,
+        eval_interval: int = 2000,
+        eval_iters: int = 200
 ):
     if seed is not None:
         np.random.seed(seed)
@@ -220,10 +221,11 @@ def main(
             n_epochs=n_epochs,
             source_tokenizer=source_tokenizer,
             target_tokenizer=target_tokenizer,
-            early_stopping=use_early_stopping,
             learning_rate=learning_rate,
             weight_decay=weight_decay,
-            decay_learning_rate=decay_learning_rate
+            decay_learning_rate=decay_learning_rate,
+            eval_interval=eval_interval,
+            eval_iters=eval_iters
         )
 
 
@@ -262,11 +264,12 @@ if __name__ == '__main__':
     parser.add_argument('--dataset_sample_fracs', default=None, help='amount to sample for each dataset. Should be of form "0.7 1.0"')
     parser.add_argument('--git_commit', default=None)
     parser.add_argument('--num_rnn_layers', type=int, default=1)
-    parser.add_argument('--use_early_stopping', action='store_true', default=False)
     parser.add_argument('--dropout', type=float, default=0.0)
     parser.add_argument('--weight_decay', default=0.0, type=float)
     parser.add_argument('--compile', default=False, action='store_true')
     parser.add_argument('--decay_learning_rate', default=False, action='store_true')
+    parser.add_argument('--eval_interval', default=2000, type=int, help='How often to evaluate performance')
+    parser.add_argument('--eval_iters', default=200, type=int, help='How many batches of data to use for evaluation')
     args = parser.parse_args()
 
     if not any(args.attention_type == x.value for x in AttentionType):
@@ -308,10 +311,11 @@ if __name__ == '__main__':
          git_commit=args.git_commit,
          embedding_size=args.embedding_dim,
          num_rnn_layers=args.num_rnn_layers,
-         use_early_stopping=args.use_early_stopping,
          learning_rate=args.learning_rate,
          dropout=args.dropout,
          weight_decay=args.weight_decay,
          decay_learning_rate=args.decay_learning_rate,
-         compile=args.compile
+         compile=args.compile,
+         eval_interval=args.eval_interval,
+         eval_iters=args.eval_iters
          )

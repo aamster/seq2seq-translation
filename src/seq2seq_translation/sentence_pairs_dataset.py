@@ -54,3 +54,11 @@ class SentencePairsDataset(Dataset):
         ]
         text_tranform = T.Sequential(*transforms)
         return text_tranform
+
+    @property
+    def source_tokenizer(self) -> SentencePieceTokenizer:
+        return self._source_tokenizer
+
+    @property
+    def target_tokenizer(self) -> SentencePieceTokenizer:
+        return self._target_tokenizer
