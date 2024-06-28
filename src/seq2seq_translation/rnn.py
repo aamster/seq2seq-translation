@@ -130,7 +130,7 @@ class DecoderRNN(nn.Module):
     def _initialize_forward(self, encoder_hidden: torch.Tensor):
         batch_size = encoder_hidden.shape[1]
 
-        decoder_hidden = encoder_hidden.permute(1, 0, 2).contiguous().view(self.gru.num_layers, batch_size, -1)
+        decoder_hidden = encoder_hidden.transpose(0, 1).reshape(self.gru.num_layers, batch_size, -1)
         decoder_hidden = self.Wh(decoder_hidden)
         decoder_input = torch.empty(
             batch_size, 1,
