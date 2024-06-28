@@ -143,7 +143,8 @@ def train_epoch(
 ):
 
     total_loss = 0
-    for epoch_iter, data in enumerate(tqdm(train_data_loader, total=len(train_data_loader), desc=f'train epoch {epoch}')):
+    prog_bar = tqdm(train_data_loader, total=len(train_data_loader), desc=f'train epoch {epoch}')
+    for epoch_iter, data in enumerate(prog_bar):
         input_tensor, target_tensor, _ = data
 
         global_iter_num = (epoch-1) * len(train_data_loader) + epoch_iter
@@ -217,7 +218,8 @@ def train_epoch(
             decoder_outputs[:, :T].reshape(batch_size * T, C),
             target_tensor.view(batch_size * T)
         )
-        print(f'Iter num {global_iter_num}: loss {loss.item():4f}')
+        prog_bar.set_postfix_str(f'Iter num {global_iter_num}: loss {loss.item():.4f}')
+        prog_bar.update()
 
         loss.backward()
 
