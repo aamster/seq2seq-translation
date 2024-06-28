@@ -106,6 +106,20 @@ def estimate_performance_metrics(
             out[data_loader_name] = {
                 'bleu_score': blue_scores.mean()
             }
+            decoded_input, predicted_target, decoded_target, dataset_name = get_pred(
+                encoder=encoder,
+                decoder=decoder,
+                data_loader=data_loader,
+                source_tokenizer=data_loader.dataset.source_tokenizer,
+                target_tokenizer=data_loader.dataset.target_tokenizer,
+                idx=torch.randint(low=0, high=len(data_loader.dataset), size=(1,))[0].item()
+
+            )
+            print('dataset:', dataset_name)
+            print('input:', decoded_input)
+            print('target:', decoded_target)
+            print('pred:', predicted_target)
+
     encoder.train()
     decoder.train()
     return out
