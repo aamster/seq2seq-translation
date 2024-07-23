@@ -64,6 +64,7 @@ class DecoderRNN(nn.Module):
         context_size: int = 128,
         num_layers: int = 1,
         dropout: float = 0.0,
+        encoder_bidirectional: bool = True
 
     ):
         super(DecoderRNN, self).__init__()
@@ -83,6 +84,7 @@ class DecoderRNN(nn.Module):
         self._max_len = max_len
         self._sos_token_id = sos_token_id
         self._C = output_size
+        self._encoder_bidirectional = encoder_bidirectional
 
     def forward(self, encoder_hidden, encoder_outputs=None, target_tensor=None):
         decoder_input, decoder_hidden, decoder_outputs = self._initialize_forward(
@@ -108,8 +110,9 @@ class DecoderRNN(nn.Module):
 
         return decoder_outputs, decoder_hidden
 
-    @staticmethod
-    def _get_context(hidden, **kwargs):
+    def _get_context(self, hidden, **kwargs):
+        # extracting the hidden state of the last layer
+        hidden = hidden[-2:] if self._encoder_bidirectional else hidden[-1]
         return hidden.permute(1, 0, 2)
 
     @staticmethod
@@ -198,7 +201,6 @@ class AttnDecoderRNN(DecoderRNN):
         if attention_type == AttentionType.BahdanauAttention:
             self.attention = BahdanauAttention(
                 hidden_size=hidden_size,
-                encoder_bidirectional=encoder_bidirectional
             )
         elif attention_type == AttentionType.CosineSimilarityAttention:
             self.attention = CosineSimilarityAttention(
@@ -226,10 +228,16 @@ class AttnDecoderRNN(DecoderRNN):
                                       device=encoder_hidden.device)
 
         for t in range(T):
-            attention_weights = self.attention(
-                query=decoder_hidden,
-                x=encoder_outputs
-            )
+            if isinstance(self.attention, BahdanauAttention):
+                attention_weights = self.attention(
+                    s_t_minus_1=decoder_hidden,
+                    h_j=encoder_outputs
+                )
+            else:
+                attention_weights = self.attention(
+                    query=decoder_hidden,
+                    x=encoder_outputs
+                )
             if return_attentions:
                 attentions.append(attention_weights)
 

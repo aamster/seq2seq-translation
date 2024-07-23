@@ -7,21 +7,23 @@ import torch.nn.functional as F
 
 
 class BahdanauAttention(nn.Module):
-    def __init__(self, hidden_size, encoder_bidirectional: bool = False):
+    def __init__(self, hidden_size):
         super().__init__()
-        # D = 2 if encoder_bidirectional else 1
-        self.Wq = nn.Linear(hidden_size, hidden_size)
-        self.Wk = nn.Linear(hidden_size, hidden_size)
-        self.Wv = nn.Linear(hidden_size, 1)
+        self.Wa = nn.Linear(hidden_size, hidden_size)
+        self.Ua = nn.Linear(hidden_size, hidden_size)
+        self.va = nn.Linear(hidden_size, 1)
 
-    def forward(self, query, x):
-        # query is decoder hidden state
-        # inputs x are encoder output at each timestep
+    def forward(self, s_t_minus_1, h_j):
+        """
 
-        batch_size = x.shape[0]
+        :param s_t_minus_1: decoder previous hidden state
+        :param h_j: encoder outputs at each timestep
+        :return: attention weights
+        """
+        batch_size = h_j.shape[0]
 
-        query = query.reshape(batch_size, 1, -1)
-        scores = self.Wv(torch.tanh(self.Wq(query) + self.Wk(x)))
+        s_t_minus_1 = s_t_minus_1.reshape(batch_size, 1, -1)
+        scores = self.va(torch.tanh(self.Wa(s_t_minus_1) + self.Ua(h_j)))
         scores = scores.squeeze(2).unsqueeze(1)
         weights = F.softmax(scores, dim=-1)
 

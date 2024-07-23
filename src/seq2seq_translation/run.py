@@ -184,10 +184,11 @@ def main(
             encoder_output_size=encoder.output_size,
             num_embeddings=target_tokenizer.processor.vocab_size(),
             sos_token_id=source_tokenizer.processor.bos_id(),
-            context_size=encoder.hidden_size,
+            context_size=int(encoder.hidden_size / num_rnn_layers),
             embedding_dim=embedding_size,
             num_layers=num_rnn_layers,
-            dropout=dropout
+            dropout=dropout,
+            encoder_bidirectional=encoder_bidirectional
         ).to(device)
 
     if model_weights_path is not None:
