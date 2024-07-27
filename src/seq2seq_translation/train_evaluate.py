@@ -296,12 +296,21 @@ def _inference(encoder, decoder, input_tensor, target_tensor: Optional[torch.Ten
 
 
 @torch.no_grad()
-def evaluate(encoder, decoder, data_loader: DataLoader, source_tokenizer: SentencePieceTokenizer, target_tokenizer: SentencePieceTokenizer, criterion):
+def evaluate(
+    encoder,
+    decoder,
+    data_loader: DataLoader,
+    source_tokenizer: SentencePieceTokenizer,
+    target_tokenizer: SentencePieceTokenizer,
+    criterion
+):
     encoder.eval()
     decoder.eval()
 
     decoded_sentences = []
-    bleu_scores = torch.zeros(len(data_loader))
+    bleu_scores = torch.zeros(len(data_loader.dataset))
+    input_lengths = torch.zeros(len(data_loader.dataset))
+    idx = 0
 
     for batch_idx, data in tqdm(enumerate(data_loader), total=len(data_loader), desc='eval'):
         input_tensor, target_tensor, _ = data
@@ -317,12 +326,20 @@ def evaluate(encoder, decoder, data_loader: DataLoader, source_tokenizer: Senten
         )
 
         bleu = BLEUScore()
-        bleu_scores[batch_idx] = bleu(
-            target_tokenizer.decode(decoded_ids),
-            # wrapping each decoded string in a list since we have a single translation reference
-            # per example
-            [[x] for x in target_tokenizer.decode(target_tensor)],
-        )
+
+        for i in range(len(decoded_ids)):
+            bleu_scores[idx] = bleu(
+                [target_tokenizer.decode(decoded_ids[i])],
+                # wrapping each decoded string in a list since we have a single translation reference
+                # per example
+                [[target_tokenizer.decode(target_tensor[i])]],
+            )
+            specials = [target_tokenizer.processor.pad_id(),
+                        target_tokenizer.processor.bos_id(),
+                        target_tokenizer.processor.eos_id()]
+            input_non_special = [x for x in input_tensor[i] if x not in specials]
+            input_lengths[idx] = len(input_non_special)
+            idx += 1
 
     decoded_input, predicted_target, decoded_target, dataset_name = get_pred(
         encoder=encoder,
@@ -342,7 +359,7 @@ def evaluate(encoder, decoder, data_loader: DataLoader, source_tokenizer: Senten
     decoder.train()
 
     bleu_score = bleu_scores.mean()
-    return decoded_sentences, bleu_score
+    return decoded_sentences, bleu_score, bleu_scores, input_lengths
 
 
 def train(

@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Optional
 
 import numpy as np
+import pandas as pd
 import torch
 import wandb
 from torch import nn
@@ -57,7 +58,8 @@ def main(
         compile: bool = False,
         decay_learning_rate: bool = True,
         eval_interval: int = 2000,
-        eval_iters: int = 200
+        eval_iters: int = 200,
+        eval_out_path: Optional[str] = None
 ):
     if seed is not None:
         np.random.seed(seed)
@@ -204,7 +206,7 @@ def main(
         decoder = torch.compile(decoder)
 
     if evaluate_only:
-        _, val_bleu = evaluate(
+        _, val_bleu, val_bleus, input_lengths = evaluate(
             encoder=encoder,
             decoder=decoder,
             data_loader=val_data_loader,
@@ -212,6 +214,9 @@ def main(
             target_tokenizer=target_tokenizer,
             criterion=nn.NLLLoss(ignore_index=target_tokenizer.processor.pad_id())
         )
+        print(f'val bleu: {val_bleu}')
+        df = pd.DataFrame({'bleu': val_bleus, 'length': input_lengths})
+        df.to_csv(eval_out_path, index=False)
     else:
         train(
             train_dataloader=train_data_loader,
@@ -271,6 +276,7 @@ if __name__ == '__main__':
     parser.add_argument('--decay_learning_rate', default=False, action='store_true')
     parser.add_argument('--eval_interval', default=2000, type=int, help='How often to evaluate performance')
     parser.add_argument('--eval_iters', default=200, type=int, help='How many batches of data to use for evaluation')
+    parser.add_argument('--eval_out_path', help='Where to save eval metrics')
     args = parser.parse_args()
 
     if not any(args.attention_type == x.value for x in AttentionType):
@@ -318,5 +324,6 @@ if __name__ == '__main__':
          decay_learning_rate=args.decay_learning_rate,
          compile=args.compile,
          eval_interval=args.eval_interval,
-         eval_iters=args.eval_iters
+         eval_iters=args.eval_iters,
+         eval_out_path=args.eval_out_path
          )
