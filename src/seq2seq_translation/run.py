@@ -242,7 +242,7 @@ if __name__ == '__main__':
     parser.add_argument('--encoder_bidirectional', action='store_true', default=False)
     parser.add_argument('--use_attention', action='store_true', default=False)
     parser.add_argument('--batch_size', type=int, default=128)
-    parser.add_argument('--model_weights_out_dir', required=True)
+    parser.add_argument('--model_weights_out_dir')
     parser.add_argument('--datasets_out_dir', required=True)
     parser.add_argument('--n_epochs', type=int, default=1000)
     parser.add_argument('--limit', type=float, default=None)
