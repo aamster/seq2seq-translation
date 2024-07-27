@@ -206,7 +206,7 @@ def main(
         decoder = torch.compile(decoder)
 
     if evaluate_only:
-        _, val_bleu, val_bleus, input_lengths = evaluate(
+        val_decoded_text, val_bleu, val_bleus, input_lengths = evaluate(
             encoder=encoder,
             decoder=decoder,
             data_loader=val_data_loader,
@@ -215,7 +215,7 @@ def main(
             criterion=nn.NLLLoss(ignore_index=target_tokenizer.processor.pad_id())
         )
         print(f'val bleu: {val_bleu}')
-        df = pd.DataFrame({'bleu': val_bleus, 'length': input_lengths})
+        df = pd.DataFrame({'bleu': val_bleus, 'length': input_lengths, 'decoded_text': val_decoded_text})
         df.to_csv(eval_out_path, index=False)
     else:
         train(

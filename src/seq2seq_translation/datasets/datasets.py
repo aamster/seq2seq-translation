@@ -106,12 +106,13 @@ class LanguagePairsDatasets:
         for i, idx in enumerate(from_indexes):
             dataset = self._get_dataset_for_idx(idx=idx)
             idx = self._get_dataset_index(idx=idx)
-            offset = dataset.target_index[idx]
+            offset_start = dataset.target_index[idx]
             if idx == len(dataset)-1:
                 continue
             else:
-                input_length = dataset.target_index[idx+1] - offset
+                offset_end = dataset.target_index[idx+1]
+                input_length = offset_end - offset_start
             if input_length > max_len:
                 max_len = input_length
-                max_len_idx = i
+                max_len_idx = idx
         return max_len_idx

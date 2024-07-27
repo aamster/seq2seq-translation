@@ -45,7 +45,7 @@ class LanguagePairsDataset(abc.ABC):
         index = []
         offset = 0
         with open(filepath, 'r') as file:
-            for line in file:
+            for i, line in enumerate(file):
                 index.append(offset)
                 offset += len(line.encode('utf-8'))
         return index

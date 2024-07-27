@@ -58,6 +58,12 @@ class NewsCommentaryDataset(LanguagePairsDataset):
     def __len__(self):
         return len(self._source_index_sampled)
 
+    @property
+    def target_index(self):
+        # swapping bc raw data stored as en-fr so target, en is actually source index
+        # TODO clean this up
+        return self._source_index
+
     def _index_files(self):
         print(f'Indexing {self._source_path}')
         source_index = self._create_index(filepath=self._source_path)
