@@ -84,6 +84,7 @@ def _download_and_extract(url: str, gzip_path: Path, out_path: Path):
 
 
 def _separate_single_language_file(path: Path, source_path: Path, target_path: Path):
+    # TODO we need to remove empty lines
     source_lines = []
     target_lines = []
     with open(path) as f:

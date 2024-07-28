@@ -180,7 +180,7 @@ def train_epoch(
                 f"step {global_iter_num}: train loss {metrics['train']['loss']:.4f}, "
                 f"train bleu {metrics['train']['bleu_score']:.4f}, "
                 f"val bleu {metrics['val']['bleu_score']:.4f}")
-            if os.environ['USE_WANDB'] == 'True':
+            if os.environ.get('USE_WANDB') == 'True':
                 wandb.log({
                     "iter": global_iter_num,
                     "lr": lr,
@@ -308,6 +308,7 @@ def evaluate(
     decoder.eval()
 
     decoded_sentences = []
+    targets = []
     bleu_scores = torch.zeros(len(data_loader.dataset))
     input_lengths = torch.zeros(len(data_loader.dataset))
     idx = 0
@@ -325,15 +326,16 @@ def evaluate(
             input_tensor=input_tensor
         )
 
-        bleu = BLEUScore()
+        bleu = BLEUScore(smooth=True)
 
         for i in range(len(decoded_ids)):
             pred = target_tokenizer.decode(decoded_ids[i])
+            target = target_tokenizer.decode(target_tensor[i])
             bleu_scores[idx] = bleu(
                 [pred],
                 # wrapping each decoded string in a list since we have a single translation reference
                 # per example
-                [[target_tokenizer.decode(target_tensor[i])]],
+                [[target]],
             )
             specials = [target_tokenizer.processor.pad_id(),
                         target_tokenizer.processor.bos_id(),
@@ -341,6 +343,7 @@ def evaluate(
             input_non_special = [x for x in input_tensor[i] if x not in specials]
             input_lengths[idx] = len(input_non_special)
             decoded_sentences.append(pred)
+            targets.append(target)
             idx += 1
 
     decoded_input, predicted_target, decoded_target, dataset_name = get_pred(
@@ -361,7 +364,7 @@ def evaluate(
     decoder.train()
 
     bleu_score = bleu_scores.mean()
-    return decoded_sentences, bleu_score, bleu_scores, input_lengths
+    return decoded_sentences, targets, bleu_score, bleu_scores, input_lengths
 
 
 def train(

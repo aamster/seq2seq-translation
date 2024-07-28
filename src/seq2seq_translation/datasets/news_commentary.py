@@ -43,6 +43,7 @@ class NewsCommentaryDataset(LanguagePairsDataset):
         _download_and_extract(url=url, gzip_path=Path(f'{out_path}.tsv.gz'), out_path=out_path)
 
     def __getitem__(self, idx) -> Tuple[str, str, str]:
+        # TODO we need to remove '\n' at end of line
         with open(self._source_path, 'r') as f:
             f.seek(self._source_index_sampled[idx])
             source = f.readline()

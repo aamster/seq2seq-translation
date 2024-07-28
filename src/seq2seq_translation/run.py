@@ -27,12 +27,12 @@ def main(
         attention_dim: int,
         encoder_bidirectional: bool,
         batch_size: int,
-        model_weights_out_dir: str,
         datasets_out_dir: str,
-        n_epochs: int,
         sentence_piece_model_save_dir: str,
         source_tokenizer_train_path: str,
         target_tokenizer_train_path: str,
+        n_epochs: Optional[int] = None,
+        model_weights_out_dir: Optional[str] = None,
         limit: Optional[int] = None,
         use_attention: bool = False,
         max_input_length: Optional[int] = None,
@@ -65,7 +65,12 @@ def main(
         np.random.seed(seed)
         torch.random.manual_seed(seed)
 
-    if os.environ['USE_WANDB'] == 'True':
+    if not evaluate_only and model_weights_out_dir is None:
+        raise ValueError('must provide model_weights_out_dir')
+    if not evaluate_only and n_epochs is None:
+        raise ValueError('must provide n_epochs')
+
+    if os.environ.get('USE_WANDB') == 'True':
         wandb.login()
 
         signature = inspect.signature(main).parameters.keys()
@@ -206,7 +211,7 @@ def main(
         decoder = torch.compile(decoder)
 
     if evaluate_only:
-        val_decoded_text, val_bleu, val_bleus, input_lengths = evaluate(
+        val_decoded_text, val_targets, val_bleu, val_bleus, input_lengths = evaluate(
             encoder=encoder,
             decoder=decoder,
             data_loader=val_data_loader,
@@ -215,7 +220,12 @@ def main(
             criterion=nn.NLLLoss(ignore_index=target_tokenizer.processor.pad_id())
         )
         print(f'val bleu: {val_bleu}')
-        df = pd.DataFrame({'bleu': val_bleus, 'length': input_lengths, 'decoded_text': val_decoded_text})
+        df = pd.DataFrame(
+            {'bleu': val_bleus,
+             'input_length': input_lengths,
+             'pred': val_decoded_text,
+             'target': val_targets
+             })
         df.to_csv(eval_out_path, index=False)
     else:
         train(
