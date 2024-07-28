@@ -328,8 +328,9 @@ def evaluate(
         bleu = BLEUScore()
 
         for i in range(len(decoded_ids)):
+            pred = target_tokenizer.decode(decoded_ids[i])
             bleu_scores[idx] = bleu(
-                [target_tokenizer.decode(decoded_ids[i])],
+                [pred],
                 # wrapping each decoded string in a list since we have a single translation reference
                 # per example
                 [[target_tokenizer.decode(target_tensor[i])]],
@@ -339,6 +340,7 @@ def evaluate(
                         target_tokenizer.processor.eos_id()]
             input_non_special = [x for x in input_tensor[i] if x not in specials]
             input_lengths[idx] = len(input_non_special)
+            decoded_sentences.append(pred)
             idx += 1
 
     decoded_input, predicted_target, decoded_target, dataset_name = get_pred(
