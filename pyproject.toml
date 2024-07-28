@@ -11,7 +11,8 @@ dependencies = [
     "torchtext",
     "sentencepiece",
     "wandb",
-    "torchmetrics"
+    "torchmetrics",
+    "evaluate"
 ]
 
 [tool.setuptools.packages.find]

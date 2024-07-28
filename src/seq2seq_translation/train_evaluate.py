@@ -326,17 +326,22 @@ def evaluate(
             input_tensor=input_tensor
         )
 
-        bleu = BLEUScore(smooth=True)
+        bleu = evaluate.load('bleu')
 
         for i in range(len(decoded_ids)):
             pred = target_tokenizer.decode(decoded_ids[i])
             target = target_tokenizer.decode(target_tensor[i])
-            bleu_scores[idx] = bleu(
-                [pred],
-                # wrapping each decoded string in a list since we have a single translation reference
-                # per example
-                [[target]],
-            )
+            try:
+                bleu_score = bleu.compute(
+                    predictions=[pred],
+                    # wrapping each decoded string in a list since we have a single translation reference
+                    # per example
+                    references=[[target]],
+                    smooth=True
+                )['bleu']
+            except ZeroDivisionError:
+                bleu_score = None
+            bleu_scores[idx] = bleu_score
             specials = [target_tokenizer.processor.pad_id(),
                         target_tokenizer.processor.bos_id(),
                         target_tokenizer.processor.eos_id()]
