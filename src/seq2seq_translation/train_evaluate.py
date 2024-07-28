@@ -11,7 +11,7 @@ from torch import optim, nn
 from torch.utils.data import DataLoader
 from torchmetrics.text import BLEUScore
 from tqdm import tqdm
-import torch.nn.functional as F
+import evaluate as huggingface_evaluate
 
 from seq2seq_translation.tokenization.sentencepiece_tokenizer import SentencePieceTokenizer
 from seq2seq_translation.rnn import EncoderRNN, AttnDecoderRNN, DecoderRNN
@@ -326,7 +326,7 @@ def evaluate(
             input_tensor=input_tensor
         )
 
-        bleu = evaluate.load('bleu')
+        bleu = huggingface_evaluate.load('bleu')
 
         for i in range(len(decoded_ids)):
             pred = target_tokenizer.decode(decoded_ids[i])
@@ -337,7 +337,8 @@ def evaluate(
                     # wrapping each decoded string in a list since we have a single translation reference
                     # per example
                     references=[[target]],
-                    smooth=True
+                    smooth=True,
+                    tokenizer=target_tokenizer.processor.encode
                 )['bleu']
             except ZeroDivisionError:
                 bleu_score = None
