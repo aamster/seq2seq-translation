@@ -341,7 +341,7 @@ def evaluate(
                     tokenizer=target_tokenizer.processor.encode
                 )['bleu']
             except ZeroDivisionError:
-                bleu_score = None
+                bleu_score = 0
             bleu_scores[idx] = bleu_score
             specials = [target_tokenizer.processor.pad_id(),
                         target_tokenizer.processor.bos_id(),

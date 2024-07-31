@@ -50,14 +50,13 @@ class Europarl(LanguagePairsDataset):
         return len(self._source_index_sampled)
 
     def __getitem__(self, idx):
-        # TODO we need to remove '\n' at end of line
         with open(self._source_path, 'r') as f:
             f.seek(self._source_index_sampled[idx])
-            source = f.readline()
+            source = f.readline().strip()
             f.seek(0)
         with open(self._target_path, 'r') as f:
             f.seek(self._target_index_sampled[idx])
-            target = f.readline()
+            target = f.readline().strip()
             f.seek(0)
         return source, target, 'europarl'
 

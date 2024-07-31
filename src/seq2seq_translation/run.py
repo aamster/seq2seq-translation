@@ -59,7 +59,9 @@ def main(
         decay_learning_rate: bool = True,
         eval_interval: int = 2000,
         eval_iters: int = 200,
-        eval_out_path: Optional[str] = None
+        eval_out_path: Optional[str] = None,
+        is_test: bool = False,
+        decoder_num_timesteps: Optional[int] = None
 ):
     if seed is not None:
         np.random.seed(seed)
@@ -85,7 +87,8 @@ def main(
         out_dir=Path(datasets_out_dir),
         source_lang=source_lang,
         target_lang=target_lang,
-        sample_fracs=dataset_sample_fracs
+        sample_fracs=dataset_sample_fracs,
+        is_test=is_test
     )
     print('Creating source tokenizer train set')
     datasets.create_source_tokenizer_train_set(
@@ -136,6 +139,13 @@ def main(
         target_tokenizer=target_tokenizer,
         max_length=None,
     )
+    test_dset = SentencePairsDataset(
+        datasets=datasets,
+        idxs=np.arange(len(datasets)),
+        source_tokenizer=source_tokenizer,
+        target_tokenizer=target_tokenizer,
+        max_length=None,
+    )
 
     collate_fn = CollateFunction(pad_token_id=source_tokenizer.processor.pad_id())
     train_data_loader = DataLoader(
@@ -146,6 +156,12 @@ def main(
     )
     val_data_loader = DataLoader(
         dataset=val_dset,
+        shuffle=False,
+        batch_size=batch_size,
+        collate_fn=collate_fn
+    )
+    test_data_loader = DataLoader(
+        dataset=test_dset,
         shuffle=False,
         batch_size=batch_size,
         collate_fn=collate_fn
@@ -164,13 +180,17 @@ def main(
         dropout=dropout,
     ).to(device)
 
+    if decoder_num_timesteps is None:
+        decoder_num_timesteps = (
+            len(train_dset[datasets.get_max_target_length_index(from_indexes=train_idxs)][1]))
+
     if use_attention:
         decoder = AttnDecoderRNN(
             hidden_size=decoder_hidden_dim,
             attention_size=attention_dim,
             output_size=target_tokenizer.processor.vocab_size(),
             encoder_bidirectional=encoder_bidirectional,
-            max_len=len(train_dset[datasets.get_max_target_length_index(from_indexes=train_idxs)][1]),
+            max_len=decoder_num_timesteps,
             freeze_embedding_layer=freeze_embedding_layer,
             attention_type=attention_type,
             encoder_output_size=encoder.output_size,
@@ -185,7 +205,7 @@ def main(
         decoder = DecoderRNN(
             hidden_size=decoder_hidden_dim,
             output_size=target_tokenizer.processor.vocab_size(),
-            max_len=len(train_dset[datasets.get_max_target_length_index(from_indexes=train_idxs)][1]),
+            max_len=decoder_num_timesteps,
             freeze_embedding_layer=freeze_embedding_layer,
             pad_idx=source_tokenizer.processor.pad_id(),
             encoder_output_size=encoder.output_size,
@@ -214,12 +234,12 @@ def main(
         val_decoded_text, val_targets, val_bleu, val_bleus, input_lengths = evaluate(
             encoder=encoder,
             decoder=decoder,
-            data_loader=val_data_loader,
+            data_loader=test_data_loader if is_test else val_data_loader,
             source_tokenizer=source_tokenizer,
             target_tokenizer=target_tokenizer,
             criterion=nn.NLLLoss(ignore_index=target_tokenizer.processor.pad_id())
         )
-        print(f'val bleu: {val_bleu}')
+        print(f'bleu: {val_bleu}')
         df = pd.DataFrame(
             {'bleu': val_bleus,
              'input_length': input_lengths,
@@ -287,6 +307,8 @@ if __name__ == '__main__':
     parser.add_argument('--eval_interval', default=2000, type=int, help='How often to evaluate performance')
     parser.add_argument('--eval_iters', default=200, type=int, help='How many batches of data to use for evaluation')
     parser.add_argument('--eval_out_path', help='Where to save eval metrics')
+    parser.add_argument('--is_test', action='store_true', default=False)
+    parser.add_argument('--decoder_num_timesteps', type=int, default=None)
     args = parser.parse_args()
 
     if not any(args.attention_type == x.value for x in AttentionType):
@@ -335,5 +357,7 @@ if __name__ == '__main__':
          compile=args.compile,
          eval_interval=args.eval_interval,
          eval_iters=args.eval_iters,
-         eval_out_path=args.eval_out_path
+         eval_out_path=args.eval_out_path,
+         is_test=args.is_test,
+         decoder_num_timesteps=args.decoder_num_timesteps
          )

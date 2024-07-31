@@ -7,6 +7,7 @@ from tqdm import tqdm
 
 from seq2seq_translation.datasets.europarl import Europarl
 from seq2seq_translation.datasets.news_commentary import NewsCommentaryDataset
+from seq2seq_translation.datasets.wmt14_test import WMT14_Test
 
 
 class LanguagePairsDatasets:
@@ -16,27 +17,37 @@ class LanguagePairsDatasets:
         out_dir: Path,
         source_lang: str,
         target_lang: str,
-        sample_fracs: Optional[List[float]] = None
+        sample_fracs: Optional[List[float]] = None,
+        is_test: bool = False
     ):
         if sample_fracs is not None:
             assert len(sample_fracs) == 2
         else:
             sample_fracs = [None, None]
-        self._datasets = [
-            Europarl(
-                out_dir=out_dir / 'europarl',
-                source_lang=source_lang,
-                target_lang=target_lang,
-                sample_frac=sample_fracs[0]
-            ),
-            NewsCommentaryDataset(
-                out_dir=out_dir / 'news_commentary',
-                # swapping bc most datasets are en-*
-                source_lang=target_lang,
-                target_lang=source_lang,
-                sample_frac=sample_fracs[1]
-            )
-        ]
+        if is_test:
+            self._datasets = [
+                WMT14_Test(
+                    out_dir=out_dir / 'wmt14_test',
+                    source_lang=source_lang,
+                    target_lang=target_lang
+                )
+            ]
+        else:
+            self._datasets = [
+                Europarl(
+                    out_dir=out_dir / 'europarl',
+                    source_lang=source_lang,
+                    target_lang=target_lang,
+                    sample_frac=sample_fracs[0]
+                ),
+                NewsCommentaryDataset(
+                    out_dir=out_dir / 'news_commentary',
+                    # swapping bc most datasets are en-*
+                    source_lang=target_lang,
+                    target_lang=source_lang,
+                    sample_frac=sample_fracs[1]
+                )
+            ]
 
     def __getitem__(self, idx):
         dataset = self._get_dataset_for_idx(idx=idx)
