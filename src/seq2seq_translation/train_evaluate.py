@@ -3,7 +3,7 @@ import os
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Type
 
 import torch
 import wandb
@@ -13,6 +13,7 @@ from torchmetrics.text import BLEUScore
 from tqdm import tqdm
 import evaluate as huggingface_evaluate
 
+from seq2seq_translation.inference import SequenceGenerator, BeamSearchSequenceGenerator
 from seq2seq_translation.tokenization.sentencepiece_tokenizer import SentencePieceTokenizer
 from seq2seq_translation.rnn import EncoderRNN, AttnDecoderRNN, DecoderRNN
 
@@ -72,10 +73,10 @@ def estimate_performance_metrics(
                 target_tensor = target_tensor.cuda()
 
             if data_loader_name == 'train':
-                decoder_outputs, _, _, decoded_ids = _inference(
+                decoder_outputs, _, _, decoded_ids = inference(
                     encoder=encoder, decoder=decoder, input_tensor=input_tensor, target_tensor=target_tensor)
             else:
-                decoder_outputs, _, _, decoded_ids = _inference(
+                decoder_outputs, _, _, decoded_ids = inference(
                     encoder=encoder, decoder=decoder, input_tensor=input_tensor)
 
             if data_loader_name == 'train':
@@ -262,7 +263,7 @@ def get_pred(
         input_tensor = input_tensor.cuda()
         target_tensor = target_tensor.cuda()
 
-    _, _, _, decoded_ids = _inference(
+    _, _, _, decoded_ids = inference(
         encoder=encoder,
         decoder=decoder,
         input_tensor=input_tensor.reshape(1, -1)
@@ -274,7 +275,8 @@ def get_pred(
     return input, pred, target, dataset_name
 
 
-def _inference(encoder, decoder, input_tensor, target_tensor: Optional[torch.Tensor] = None):
+@torch.no_grad()
+def inference(encoder, decoder, input_tensor, target_tensor: Optional[torch.Tensor] = None):
     encoder_outputs, encoder_hidden = encoder(input_tensor)
 
     decoder_res = decoder(
@@ -302,7 +304,7 @@ def evaluate(
     data_loader: DataLoader,
     source_tokenizer: SentencePieceTokenizer,
     target_tokenizer: SentencePieceTokenizer,
-    criterion
+    sequence_generator_type: Type[SequenceGenerator] = BeamSearchSequenceGenerator
 ):
     encoder.eval()
     decoder.eval()
@@ -320,16 +322,18 @@ def evaluate(
             input_tensor = input_tensor.cuda()
             target_tensor = target_tensor.cuda()
 
-        decoder_outputs, decoder_hidden, decoder_attn, decoded_ids = _inference(
-            encoder=encoder,
-            decoder=decoder,
-            input_tensor=input_tensor
-        )
-
         bleu = huggingface_evaluate.load('bleu')
 
-        for i in range(len(decoded_ids)):
-            pred = target_tokenizer.decode(decoded_ids[i])
+        sequence_generator = sequence_generator_type(
+            encoder=encoder,
+            decoder=decoder,
+            tokenizer=target_tokenizer,
+        )
+        for i in range(len(input_tensor)):
+            pred = sequence_generator.generate(input_tensor=input_tensor[i])
+            if isinstance(sequence_generator, BeamSearchSequenceGenerator):
+                # it returns list of top scoring beams. select best one, and get decoded text
+                pred = pred[0][0]
             target = target_tokenizer.decode(target_tensor[i])
             try:
                 bleu_score = bleu.compute(

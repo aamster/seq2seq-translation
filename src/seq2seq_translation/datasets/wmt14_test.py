@@ -38,8 +38,8 @@ class WMT14_Test(LanguagePairsDataset):
         return len(self._ds)
 
     def __getitem__(self, idx):
-        source = self._ds['translation'][idx][self._source_lang].replace('\xa0', ' ')
-        target = self._ds['translation'][idx][self._target_lang].replace('\xa0', ' ')
+        source = self._ds['translation'][idx][self._source_lang]
+        target = self._ds['translation'][idx][self._target_lang]
         return source, target, 'wmt14_test'
 
     @property

@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 from typing import List
 
 import sentencepiece as spm
@@ -45,6 +46,11 @@ class SentencePieceTokenizer:
             num_threads=os.cpu_count()  # use ~all system resources
         )
         self._model = f'{model_prefix}.model'
+
+        if Path(self._model).exists():
+            self._processor.load(self._model)
+        else:
+            self.train()
 
     @property
     def processor(self):

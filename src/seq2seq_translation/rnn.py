@@ -1,3 +1,4 @@
+import abc
 from typing import Optional
 
 import torch
@@ -87,28 +88,50 @@ class DecoderRNN(nn.Module):
         self._encoder_bidirectional = encoder_bidirectional
 
     def forward(self, encoder_hidden, encoder_outputs=None, target_tensor=None):
-        decoder_input, decoder_hidden, decoder_outputs = self._initialize_forward(
+        decoder_input, decoder_hidden, decoder_outputs = self.initialize_forward(
             encoder_hidden=encoder_hidden
         )
 
         T = target_tensor.shape[1] if target_tensor is not None else self._max_len
         for t in range(T):
-            decoder_output, decoder_hidden = self.forward_step(
-                input=decoder_input,
-                hidden=decoder_hidden,
-                context=self._get_context(hidden=encoder_hidden)
-            )
-            decoder_outputs.append(decoder_output)
-            decoder_input = self._get_y_t(
-                decoder_output=decoder_output,
+            decoder_input, _, decoder_output, decoder_hidden = self.decode_step(
+                decoder_input=decoder_input,
+                decoder_hidden=decoder_hidden,
+                encoder_hidden=encoder_hidden,
                 target_tensor=target_tensor,
                 t=t
             )
+            decoder_outputs.append(decoder_output)
 
         decoder_outputs = torch.cat(decoder_outputs, dim=1)
         decoder_outputs = F.log_softmax(decoder_outputs, dim=-1)
 
         return decoder_outputs, decoder_hidden
+
+    def decode_step(
+        self,
+        decoder_input,
+        decoder_hidden,
+        encoder_hidden,
+        target_tensor: Optional[torch.tensor] = None,
+        t: Optional[int] = None,
+        encoder_outputs: Optional[torch.tensor] = None,
+        k: int = 1,
+        softmax_scores: bool = False
+    ):
+        decoder_output, decoder_hidden = self.forward_step(
+            input=decoder_input,
+            hidden=decoder_hidden,
+            context=self._get_context(hidden=encoder_hidden)
+        )
+        token, scores = self._get_y_t(
+            decoder_output=decoder_output,
+            target_tensor=target_tensor,
+            t=t,
+            k=k,
+            softmax_scores=softmax_scores
+        )
+        return token, scores, decoder_output, decoder_hidden
 
     def _get_context(self, hidden, **kwargs):
         # extracting the hidden state of the last layer
@@ -118,19 +141,28 @@ class DecoderRNN(nn.Module):
     @staticmethod
     def _get_y_t(
         decoder_output: torch.Tensor,
-        t: int,
-        target_tensor: Optional[torch.Tensor] = None
+        t: Optional[int] = None,
+        target_tensor: Optional[torch.Tensor] = None,
+        k=1,
+        softmax_scores: bool = False
     ):
         if target_tensor is not None:
+            if t is None:
+                raise ValueError('must provide t if training')
             # Teacher forcing: Feed the target as the next input
             y_t = target_tensor[:, t].unsqueeze(1)  # Teacher forcing
+            top_scores = None
         else:
             # Without teacher forcing: use its own predictions as the next input
-            _, topi = decoder_output.topk(1)
-            y_t = topi.squeeze(-1).detach()  # detach from history as input
-        return y_t
+            if softmax_scores:
+                decoder_output = F.softmax(decoder_output, dim=-1)
+            top_scores, topi = decoder_output.topk(k=k, dim=-1)
+            y_t = topi.squeeze(-1)
+            y_t = y_t.detach()  # detach from history as input
 
-    def _initialize_forward(self, encoder_hidden: torch.Tensor):
+        return y_t, top_scores
+
+    def initialize_forward(self, encoder_hidden: torch.Tensor):
         batch_size = encoder_hidden.shape[1]
 
         decoder_hidden = encoder_hidden.transpose(0, 1).reshape(self.gru.num_layers, batch_size, -1)
@@ -171,7 +203,6 @@ class AttnDecoderRNN(DecoderRNN):
         self,
         hidden_size,
         output_size,
-        max_len: int,
         attention_type: AttentionType,
         encoder_output_size: int,
         num_embeddings: int,
@@ -182,7 +213,8 @@ class AttnDecoderRNN(DecoderRNN):
         freeze_embedding_layer: bool = False,
         embedding_dim: int = 128,
         num_layers: int = 1,
-        dropout: float = 0.0
+        dropout: float = 0.0,
+        max_len: Optional[int] = None,
     ):
         super().__init__(
             hidden_size=hidden_size,
@@ -217,7 +249,7 @@ class AttnDecoderRNN(DecoderRNN):
         if encoder_outputs is None:
             raise ValueError(f'encoder outputs must be given for {type(self)}')
 
-        decoder_input, decoder_hidden, _ = self._initialize_forward(
+        decoder_input, decoder_hidden, _ = self.initialize_forward(
             encoder_hidden=encoder_hidden
         )
         attentions = []
@@ -228,38 +260,16 @@ class AttnDecoderRNN(DecoderRNN):
                                       device=encoder_hidden.device)
 
         for t in range(T):
-            if isinstance(self.attention, BahdanauAttention):
-                attention_weights = self.attention(
-                    s_t_minus_1=decoder_hidden,
-                    h_j=encoder_outputs
-                )
-            else:
-                attention_weights = self.attention(
-                    query=decoder_hidden,
-                    x=encoder_outputs
-                )
-            if return_attentions:
-                attentions.append(attention_weights)
-
-            if isinstance(self.attention, BahdanauAttention):
-                context = self._get_context(
-                    attn_weights=attention_weights,
-                    encoder_outputs=encoder_outputs
-                )
-            elif isinstance(self.attention, CosineSimilarityAttention):
-                context = attention_weights
-            else:
-                raise ValueError(f'Unknown attention {type(self.attention)}')
-            decoder_output, decoder_hidden = self.forward_step(
-                input=decoder_input,
-                hidden=decoder_hidden,
-                context=context
-            )
-            decoder_input = self._get_y_t(
-                decoder_output=decoder_output,
+            decoder_input, _, decoder_output, attention_weights, decoder_hidden = self.decode_step(
+                decoder_input=decoder_input,
+                decoder_hidden=decoder_hidden,
+                encoder_hidden=encoder_hidden,
+                encoder_outputs=encoder_outputs,
                 target_tensor=target_tensor,
                 t=t
             )
+            if return_attentions:
+                attentions.append(attention_weights)
             decoder_outputs[:, t] = decoder_output.squeeze(1)
 
         decoder_outputs = F.log_softmax(decoder_outputs, dim=-1)
@@ -268,6 +278,54 @@ class AttnDecoderRNN(DecoderRNN):
             attentions = torch.cat(attentions, dim=1)
 
         return decoder_outputs, decoder_hidden, attentions
+
+    def decode_step(
+        self,
+        decoder_input,
+        decoder_hidden,
+        encoder_hidden,
+        encoder_outputs: Optional[torch.tensor] = None,
+        target_tensor: Optional[torch.tensor] = None,
+        t: Optional[int] = None,
+        k: int = 1,
+        softmax_scores: bool = False
+    ):
+        if encoder_outputs is None:
+            raise ValueError('encoder_outputs must be provided')
+
+        if isinstance(self.attention, BahdanauAttention):
+            attention_weights = self.attention(
+                s_t_minus_1=decoder_hidden,
+                h_j=encoder_outputs
+            )
+        else:
+            attention_weights = self.attention(
+                query=decoder_hidden,
+                x=encoder_outputs
+            )
+
+        if isinstance(self.attention, BahdanauAttention):
+            context = self._get_context(
+                attn_weights=attention_weights,
+                encoder_outputs=encoder_outputs
+            )
+        elif isinstance(self.attention, CosineSimilarityAttention):
+            context = attention_weights
+        else:
+            raise ValueError(f'Unknown attention {type(self.attention)}')
+        decoder_output, decoder_hidden = self.forward_step(
+            input=decoder_input,
+            hidden=decoder_hidden,
+            context=context
+        )
+        token, scores = self._get_y_t(
+            decoder_output=decoder_output,
+            target_tensor=target_tensor,
+            t=t,
+            k=k,
+            softmax_scores=softmax_scores
+        )
+        return token, scores, decoder_output, attention_weights, decoder_hidden
 
     def _get_context(self, **kwargs):
         attn_weights = kwargs.get('attn_weights')

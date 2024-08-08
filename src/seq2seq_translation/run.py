@@ -109,12 +109,10 @@ def main(
     source_tokenizer = SentencePieceTokenizer(input_path=source_tokenizer_train_path,
                                               vocab_size=source_vocab_length,
                                               model_prefix=str(source_tokenizer_model_path))
-    source_tokenizer.train()
 
     target_tokenizer = SentencePieceTokenizer(input_path=target_tokenizer_train_path,
                                               vocab_size=target_vocab_length,
                                               model_prefix=str(target_tokenizer_model_path))
-    target_tokenizer.train()
 
     print(f'{source_tokenizer.processor.vocab_size()} source tokens')
     print(f'{target_tokenizer.processor.vocab_size()} target tokens')
@@ -237,7 +235,6 @@ def main(
             data_loader=test_data_loader if is_test else val_data_loader,
             source_tokenizer=source_tokenizer,
             target_tokenizer=target_tokenizer,
-            criterion=nn.NLLLoss(ignore_index=target_tokenizer.processor.pad_id())
         )
         print(f'bleu: {val_bleu}')
         df = pd.DataFrame(
