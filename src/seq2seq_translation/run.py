@@ -88,7 +88,7 @@ def main(
         source_lang=source_lang,
         target_lang=target_lang,
         sample_fracs=dataset_sample_fracs,
-        is_test=is_test
+        is_test=False
     )
     print('Creating source tokenizer train set')
     datasets.create_source_tokenizer_train_set(
@@ -137,9 +137,17 @@ def main(
         target_tokenizer=target_tokenizer,
         max_length=None,
     )
+
+    test_datasets = LanguagePairsDatasets(
+            out_dir=Path(datasets_out_dir),
+            source_lang=source_lang,
+            target_lang=target_lang,
+            is_test=True
+    )
+
     test_dset = SentencePairsDataset(
-        datasets=datasets,
-        idxs=np.arange(len(datasets)),
+        datasets=test_datasets,
+        idxs=np.arange(len(test_datasets)),
         source_tokenizer=source_tokenizer,
         target_tokenizer=target_tokenizer,
         max_length=None,
