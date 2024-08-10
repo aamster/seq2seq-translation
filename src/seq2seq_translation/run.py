@@ -9,7 +9,7 @@ import pandas as pd
 import torch
 import wandb
 from torch import nn
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, TensorDataset
 
 from seq2seq_translation.attention import AttentionType
 from seq2seq_translation.data_loading import \
@@ -167,7 +167,7 @@ def main(
         collate_fn=collate_fn
     )
     test_data_loader = DataLoader(
-        dataset=test_dset,
+        dataset=TensorDataset(test_dset[0][0].unsqueeze(0), test_dset[0][1].unsqueeze(0), torch.tensor([]).unsqueeze(0)),
         shuffle=False,
         batch_size=batch_size,
         collate_fn=collate_fn
