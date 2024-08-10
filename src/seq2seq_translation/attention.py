@@ -45,11 +45,12 @@ class CosineSimilarityAttention(nn.Module):
         self.Wv = nn.Linear(Dx, Dv)
         self.dropout = nn.Dropout(dropout)
 
-    def forward(self, query, x):
+    def forward(self, query, x, mask: torch.tensor):
         """
 
         :param query: decoder hidden state
         :param x: encoder output at each timestep
+        :param mask: ignore the pad tokens in the encoder output
         :return: attention weights
         """
         keys = self.Wk(x)
@@ -59,6 +60,10 @@ class CosineSimilarityAttention(nn.Module):
         Dq = query.shape[-1]
         query = query.squeeze(0).unsqueeze(1)
         scores = torch.bmm(query, keys.transpose(1, 2)) / math.sqrt(Dq)
+
+        # mask the pad token
+        scores = scores.masked_fill(mask.unsqueeze(1), float('-inf'))
+
         attention = F.softmax(scores, dim=-1)
         attention = self.dropout(attention)
         Y = attention.bmm(values)

@@ -103,6 +103,7 @@ class DecoderRNN(nn.Module):
         self._sos_token_id = sos_token_id
         self._C = output_size
         self._encoder_bidirectional = encoder_bidirectional
+        self._pad_idx = pad_idx
 
     def forward(self, encoder_hidden, encoder_outputs=None, target_tensor=None):
         decoder_input, decoder_hidden, decoder_outputs = self.initialize_forward(
@@ -310,15 +311,19 @@ class AttnDecoderRNN(DecoderRNN):
         if encoder_outputs is None:
             raise ValueError('encoder_outputs must be provided')
 
+        mask = (encoder_outputs == self._pad_idx).all(dim=-1)
+
         if isinstance(self.attention, BahdanauAttention):
             attention_weights = self.attention(
                 s_t_minus_1=decoder_hidden,
-                h_j=encoder_outputs
+                h_j=encoder_outputs,
+                mask=mask
             )
         else:
             attention_weights = self.attention(
                 query=decoder_hidden,
-                x=encoder_outputs
+                x=encoder_outputs,
+                mask=mask
             )
 
         if isinstance(self.attention, BahdanauAttention):
