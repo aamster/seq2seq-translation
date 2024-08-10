@@ -1,9 +1,5 @@
-import re
-import unicodedata
-from typing import List, Tuple
-
 import numpy as np
-from torch.nn.utils.rnn import pad_sequence
+import torch
 
 
 class DataSplitter:
@@ -31,14 +27,15 @@ class CollateFunction:
 
     def __call__(self, batch):
         src_batch, target_batch, dataset_name = zip(*batch)
-        src_batch_padded = pad_sequence(
+        src_batch_padded = torch.nn.utils.rnn.pad_sequence(
             src_batch,
             batch_first=True,
             padding_value=self._pad_token_id
         )
-        target_batch_padded = pad_sequence(
+        target_batch_padded = torch.nn.utils.rnn.pad_sequence(
             target_batch,
             batch_first=True,
             padding_value=self._pad_token_id
         )
+
         return src_batch_padded, target_batch_padded, dataset_name

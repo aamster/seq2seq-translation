@@ -26,11 +26,28 @@ class EncoderRNN(nn.Module):
         self.embedding = nn.Embedding(num_embeddings=input_size, embedding_dim=embedding_dim)
         self.gru = nn.GRU(input_size=embedding_dim, hidden_size=hidden_size, batch_first=True, bidirectional=bidirectional, num_layers=num_layers)
         self.dropout = nn.Dropout(dropout)
+        self._pad_idx = pad_idx
 
     def forward(self, input):
         embedded = self.embedding(input)
         embedded = self.dropout(embedded)
-        output, hidden = self.gru(embedded)
+
+        packed_embedded = torch.nn.utils.rnn.pack_padded_sequence(
+            input=embedded,
+            lengths=torch.sum(input != self._pad_idx, dim=1),
+            batch_first=True,
+            enforce_sorted=False
+        )
+
+        packed_output, hidden = self.gru(packed_embedded)
+
+        # Convert back into a tensor
+        output, _ = torch.nn.utils.rnn.pad_packed_sequence(
+            packed_output,
+            batch_first=True,
+            padding_value=self._pad_idx
+        )
+
         return output, hidden
 
     @property
