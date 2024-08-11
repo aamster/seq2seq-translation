@@ -74,6 +74,7 @@ class DecoderRNN(nn.Module):
         max_len: int,
         encoder_output_size: int,
         sos_token_id: int,
+        eos_token_id: int,
         num_embeddings: int,
         pad_idx: Optional[int] = None,
         use_context_vector: bool = True,
@@ -104,14 +105,20 @@ class DecoderRNN(nn.Module):
         self._C = output_size
         self._encoder_bidirectional = encoder_bidirectional
         self._pad_idx = pad_idx
+        self._eos_token_id = eos_token_id
 
     def forward(self, encoder_hidden, encoder_outputs=None, target_tensor=None):
         decoder_input, decoder_hidden, decoder_outputs = self.initialize_forward(
             encoder_hidden=encoder_hidden
         )
+        batch_size = decoder_input.shape[0]
+        finished_mask = torch.zeros((batch_size, 1), dtype=torch.bool)
 
-        T = target_tensor.shape[1] if target_tensor is not None else self._max_len
-        for t in range(T):
+        outputs = []
+        for t in range(self._max_len):
+            if finished_mask.all():
+                break  # Stop if all sequences are finished
+
             decoder_input, _, decoder_output, decoder_hidden = self.decode_step(
                 decoder_input=decoder_input,
                 decoder_hidden=decoder_hidden,
@@ -119,7 +126,11 @@ class DecoderRNN(nn.Module):
                 target_tensor=target_tensor,
                 t=t
             )
-            decoder_outputs.append(decoder_output)
+            outputs.append(decoder_output)
+
+            finished_mask |= (decoder_input == self._eos_token_id)
+
+            decoder_input = decoder_input.masked_fill(finished_mask, self._eos_token_id)
 
         decoder_outputs = torch.cat(decoder_outputs, dim=1)
         decoder_outputs = F.log_softmax(decoder_outputs, dim=-1)
@@ -225,6 +236,7 @@ class AttnDecoderRNN(DecoderRNN):
         encoder_output_size: int,
         num_embeddings: int,
         sos_token_id: int,
+        eos_token_id: int,
         pad_idx: Optional[int] = None,
         attention_size: int = 256,
         encoder_bidirectional: bool = False,
@@ -246,7 +258,8 @@ class AttnDecoderRNN(DecoderRNN):
             num_embeddings=num_embeddings,
             embedding_dim=embedding_dim,
             sos_token_id=sos_token_id,
-            num_layers=num_layers
+            num_layers=num_layers,
+            eos_token_id=eos_token_id
         )
         if attention_type == AttentionType.BahdanauAttention:
             self.attention = BahdanauAttention(
@@ -273,11 +286,13 @@ class AttnDecoderRNN(DecoderRNN):
         attentions = []
 
         batch_size = decoder_input.shape[0]
-        T = target_tensor.shape[1] if target_tensor is not None else self._max_len
-        decoder_outputs = torch.zeros(size=(batch_size, T, self._C),
-                                      device=encoder_hidden.device)
+        finished_mask = torch.zeros((batch_size, 1), dtype=torch.bool)
 
-        for t in range(T):
+        outputs = []
+        for t in range(self._max_len):
+            if finished_mask.all():
+                break  # Stop if all sequences are finished
+
             decoder_input, _, decoder_output, attention_weights, decoder_hidden = self.decode_step(
                 decoder_input=decoder_input,
                 decoder_hidden=decoder_hidden,
@@ -286,10 +301,17 @@ class AttnDecoderRNN(DecoderRNN):
                 target_tensor=target_tensor,
                 t=t
             )
+
+            outputs.append(decoder_output)
+
+            finished_mask |= (decoder_input == self._eos_token_id)
+
+            decoder_input = decoder_input.masked_fill(finished_mask, self._eos_token_id)
+
             if return_attentions:
                 attentions.append(attention_weights)
-            decoder_outputs[:, t] = decoder_output.squeeze(1)
 
+        decoder_outputs = torch.cat(outputs, dim=1)  # Shape: [batch_size, sequence_length, hidden_size]
         decoder_outputs = F.log_softmax(decoder_outputs, dim=-1)
 
         if return_attentions:

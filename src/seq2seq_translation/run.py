@@ -205,7 +205,8 @@ def main(
             sos_token_id=source_tokenizer.processor.bos_id(),
             embedding_dim=embedding_size,
             num_layers=num_rnn_layers,
-            dropout=dropout
+            dropout=dropout,
+            eos_token_id=target_tokenizer.processor.eos_id()
         ).to(device)
     else:
         decoder = DecoderRNN(
@@ -221,7 +222,8 @@ def main(
             embedding_dim=embedding_size,
             num_layers=num_rnn_layers,
             dropout=dropout,
-            encoder_bidirectional=encoder_bidirectional
+            encoder_bidirectional=encoder_bidirectional,
+            eos_token_id=target_tokenizer.processor.eos_id()
         ).to(device)
 
     if model_weights_path is not None:
