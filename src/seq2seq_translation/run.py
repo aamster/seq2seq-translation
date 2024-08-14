@@ -27,7 +27,7 @@ def main(
         attention_dim: int,
         encoder_bidirectional: bool,
         batch_size: int,
-        datasets_out_dir: str,
+        datasets_dir: str,
         sentence_piece_model_dir: str,
         source_tokenizer_train_path: str,
         target_tokenizer_train_path: str,
@@ -84,7 +84,7 @@ def main(
         wandb.config.update({"git_commit": git_commit})
 
     datasets = LanguagePairsDatasets(
-        out_dir=Path(datasets_out_dir),
+        out_dir=Path(datasets_dir),
         source_lang=source_lang,
         target_lang=target_lang,
         is_test=False
@@ -138,7 +138,7 @@ def main(
     )
 
     test_datasets = LanguagePairsDatasets(
-            out_dir=Path(datasets_out_dir),
+            out_dir=Path(datasets_dir),
             source_lang=source_lang,
             target_lang=target_lang,
             is_test=True
@@ -279,7 +279,7 @@ if __name__ == '__main__':
     parser.add_argument('--use_attention', action='store_true', default=False)
     parser.add_argument('--batch_size', type=int, default=128)
     parser.add_argument('--model_weights_out_dir')
-    parser.add_argument('--datasets_out_dir', required=True)
+    parser.add_argument('--datasets_dir', required=True)
     parser.add_argument('--n_epochs', type=int, default=1000)
     parser.add_argument('--limit', type=float, default=None)
     parser.add_argument('--embedding_dim', type=int, default=128)
@@ -352,7 +352,7 @@ if __name__ == '__main__':
          source_vocab_length=args.source_vocab_length,
          target_vocab_length=args.target_vocab_length,
          sentence_piece_model_dir=args.sentence_piece_model_dir,
-         datasets_out_dir=args.datasets_out_dir,
+         datasets_dir=args.datasets_dir,
          train_frac=args.train_frac,
          dataset_sample_fracs=dataset_sample_fracs,
          git_commit=args.git_commit,
