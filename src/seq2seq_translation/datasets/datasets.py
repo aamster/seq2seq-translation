@@ -5,9 +5,7 @@ from typing import Optional, List
 import numpy as np
 from tqdm import tqdm
 
-from seq2seq_translation.datasets.europarl import Europarl
-from seq2seq_translation.datasets.news_commentary import NewsCommentaryDataset
-from seq2seq_translation.datasets.wmt14_test import WMT14_Test
+from seq2seq_translation.datasets.wmt14 import WMT14
 
 
 class LanguagePairsDatasets:
@@ -17,35 +15,25 @@ class LanguagePairsDatasets:
         out_dir: Path,
         source_lang: str,
         target_lang: str,
-        sample_fracs: Optional[List[float]] = None,
+        sample_frac: Optional[float] = None,
         is_test: bool = False
     ):
-        if sample_fracs is not None:
-            assert len(sample_fracs) == 2
-        else:
-            sample_fracs = [None, None]
         if is_test:
             self._datasets = [
-                WMT14_Test(
+                WMT14(
                     out_dir=out_dir / 'wmt14_test',
                     source_lang=source_lang,
-                    target_lang=target_lang
+                    target_lang=target_lang,
+                    split='test'
                 )
             ]
         else:
             self._datasets = [
-                Europarl(
-                    out_dir=out_dir / 'europarl',
+                WMT14(
+                    out_dir=out_dir / 'wmt14_train',
                     source_lang=source_lang,
                     target_lang=target_lang,
-                    sample_frac=sample_fracs[0]
-                ),
-                NewsCommentaryDataset(
-                    out_dir=out_dir / 'news_commentary',
-                    # swapping bc most datasets are en-*
-                    source_lang=target_lang,
-                    target_lang=source_lang,
-                    sample_frac=sample_fracs[1]
+                    split='train'
                 )
             ]
 
@@ -64,6 +52,7 @@ class LanguagePairsDatasets:
         with open(source_tokenizer_path, 'wb') as f:
             for i in tqdm(range(len(self)), desc='Creating source tokenizer train set'):
                 f.write(self[i][0].encode('utf-8'))
+                f.write(b'\n')
 
     def create_target_tokenizer_train_set(self, target_tokenizer_path: Path):
         if target_tokenizer_path.exists():
@@ -72,6 +61,7 @@ class LanguagePairsDatasets:
         with open(target_tokenizer_path, 'wb') as f:
             for i in tqdm(range(len(self)), desc='Creating target tokenizer train set'):
                 f.write(self[i][1].encode('utf-8'))
+                f.write(b'\n')
 
     def _get_dataset_for_idx(self, idx: int):
         """

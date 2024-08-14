@@ -28,7 +28,7 @@ def main(
         encoder_bidirectional: bool,
         batch_size: int,
         datasets_out_dir: str,
-        sentence_piece_model_save_dir: str,
+        sentence_piece_model_dir: str,
         source_tokenizer_train_path: str,
         target_tokenizer_train_path: str,
         n_epochs: Optional[int] = None,
@@ -87,7 +87,6 @@ def main(
         out_dir=Path(datasets_out_dir),
         source_lang=source_lang,
         target_lang=target_lang,
-        sample_fracs=dataset_sample_fracs,
         is_test=False
     )
     print('Creating source tokenizer train set')
@@ -103,8 +102,8 @@ def main(
         n_examples=len(datasets), train_frac=train_frac)
     train_idxs, test_idxs = splitter.split()
 
-    source_tokenizer_model_path = Path(sentence_piece_model_save_dir) / f'{source_lang}{source_vocab_length}'
-    target_tokenizer_model_path = Path(sentence_piece_model_save_dir) / f'{target_lang}{target_vocab_length}'
+    source_tokenizer_model_path = Path(sentence_piece_model_dir) / f'{source_lang}'
+    target_tokenizer_model_path = Path(sentence_piece_model_dir) / f'{target_lang}'
 
     source_tokenizer = SentencePieceTokenizer(input_path=source_tokenizer_train_path,
                                               vocab_size=source_vocab_length,
@@ -302,7 +301,7 @@ if __name__ == '__main__':
     parser.add_argument('--target_tokenizer_train_path', required=True)
     parser.add_argument('--source_vocab_length', default=13000, type=int)
     parser.add_argument('--target_vocab_length', default=13000, type=int)
-    parser.add_argument('--sentence_piece_model_save_dir', required=True)
+    parser.add_argument('--sentence_piece_model_dir', required=True)
     parser.add_argument('--train_frac', type=float, default=0.8)
     parser.add_argument('--dataset_sample_fracs', default=None, help='amount to sample for each dataset. Should be of form "0.7 1.0"')
     parser.add_argument('--git_commit', default=None)
@@ -352,7 +351,7 @@ if __name__ == '__main__':
          target_tokenizer_train_path=args.target_tokenizer_train_path,
          source_vocab_length=args.source_vocab_length,
          target_vocab_length=args.target_vocab_length,
-         sentence_piece_model_save_dir=args.sentence_piece_model_save_dir,
+         sentence_piece_model_dir=args.sentence_piece_model_dir,
          datasets_out_dir=args.datasets_out_dir,
          train_frac=args.train_frac,
          dataset_sample_fracs=dataset_sample_fracs,
