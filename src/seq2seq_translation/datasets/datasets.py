@@ -1,6 +1,5 @@
 import os
 from pathlib import Path
-from typing import Optional, List
 
 import numpy as np
 from tqdm import tqdm
@@ -15,7 +14,6 @@ class LanguagePairsDatasets:
         out_dir: Path,
         source_lang: str,
         target_lang: str,
-        sample_frac: Optional[float] = None,
         is_test: bool = False
     ):
         if is_test:

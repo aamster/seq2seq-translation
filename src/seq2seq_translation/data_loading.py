@@ -3,15 +3,20 @@ import torch
 
 
 class DataSplitter:
-    def __init__(self, n_examples: int, train_frac: float):
+    def __init__(self, n_examples: int, train_frac: float, rng=None):
         self._n_examples = n_examples
         self._train_frac = train_frac
+        self._rng = rng
 
     def split(self):
         print(f'{self._n_examples} pairs')
 
         idxs = np.arange(self._n_examples)
-        np.random.shuffle(idxs)
+
+        if self._rng is not None:
+            self._rng.shuffle(idxs)
+        else:
+            np.random.shuffle(idxs)
 
         n_train = int(self._n_examples * self._train_frac)
 

@@ -8,8 +8,7 @@ import numpy as np
 import pandas as pd
 import torch
 import wandb
-from torch import nn
-from torch.utils.data import DataLoader, TensorDataset
+from torch.utils.data import DataLoader, TensorDataset, DistributedSampler
 
 from seq2seq_translation.attention import AttentionType
 from seq2seq_translation.data_loading import \
@@ -19,6 +18,7 @@ from seq2seq_translation.sentence_pairs_dataset import SentencePairsDataset
 from seq2seq_translation.tokenization.sentencepiece_tokenizer import SentencePieceTokenizer
 from seq2seq_translation.rnn import EncoderRNN, DecoderRNN, AttnDecoderRNN
 from seq2seq_translation.train_evaluate import train, evaluate
+from seq2seq_translation.utils.ddp_utils import init_ddp
 
 
 def main(
@@ -61,12 +61,9 @@ def main(
         eval_iters: int = 200,
         eval_out_path: Optional[str] = None,
         is_test: bool = False,
-        decoder_num_timesteps: int = 10000
+        decoder_num_timesteps: int = 10000,
+        use_ddp: bool = False
 ):
-    if seed is not None:
-        np.random.seed(seed)
-        torch.random.manual_seed(seed)
-
     if not evaluate_only and model_weights_out_dir is None:
         raise ValueError('must provide model_weights_out_dir')
     if not evaluate_only and n_epochs is None:
@@ -82,6 +79,23 @@ def main(
             'data_path', 'model_weights_out_dir', 'model_weights_path', 'evaluate_only')},
         )
         wandb.config.update({"git_commit": git_commit})
+
+    if use_ddp:
+        ddp_world_size, master_process, seed_offset, ddp_local_rank = init_ddp()
+    else:
+        # if not ddp, we are running on a single gpu, and one process
+        master_process = True
+        seed_offset = 0
+        ddp_world_size = 1
+        ddp_local_rank = None
+
+    if seed is not None:
+        rng = np.random.default_rng(1234)
+
+        # seed_offset used to encourage randomness across processes in ddp
+        torch.random.manual_seed(seed + seed_offset)
+    else:
+        rng = None
 
     datasets = LanguagePairsDatasets(
         out_dir=Path(datasets_dir),
@@ -99,7 +113,7 @@ def main(
     )
 
     splitter = DataSplitter(
-        n_examples=len(datasets), train_frac=train_frac)
+        n_examples=len(datasets), train_frac=train_frac, rng=rng)
     train_idxs, test_idxs = splitter.split()
 
     source_tokenizer_model_path = Path(sentence_piece_model_dir) / f'{source_lang}'
@@ -153,11 +167,14 @@ def main(
     )
 
     collate_fn = CollateFunction(pad_token_id=source_tokenizer.processor.pad_id())
+
+    train_sampler = DistributedSampler(train_dset) if use_ddp else None
     train_data_loader = DataLoader(
         dataset=train_dset,
-        shuffle=True,
+        shuffle=(train_sampler is None),
         batch_size=batch_size,
-        collate_fn=collate_fn
+        collate_fn=collate_fn,
+        sampler=train_sampler
     )
     val_data_loader = DataLoader(
         dataset=val_dset,
@@ -172,7 +189,17 @@ def main(
         collate_fn=collate_fn
     )
 
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    if torch.cuda.is_available():
+        if use_ddp:
+            device = f"cuda:{ddp_local_rank}"
+        else:
+            device = 'cuda'
+    else:
+        if use_ddp:
+            raise ValueError('Cannot use ddp on cpu')
+        else:
+            device = 'cpu'
+    device = torch.device(device)
 
     encoder = EncoderRNN(
         input_size=source_tokenizer.processor.vocab_size(),
@@ -311,6 +338,7 @@ if __name__ == '__main__':
     parser.add_argument('--eval_out_path', help='Where to save eval metrics')
     parser.add_argument('--is_test', action='store_true', default=False)
     parser.add_argument('--decoder_num_timesteps', type=int, default=10000)
+    parser.add_argument('--use_ddp', action='store_true', default=False)
     args = parser.parse_args()
 
     if not any(args.attention_type == x.value for x in AttentionType):

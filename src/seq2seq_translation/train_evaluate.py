@@ -8,7 +8,7 @@ from typing import Optional, Type
 import torch
 import wandb
 from torch import optim, nn
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, DistributedSampler
 from torchmetrics.text import BLEUScore
 from tqdm import tqdm
 import evaluate as huggingface_evaluate
@@ -387,6 +387,9 @@ def train(
     best_bleu_score = -float('inf')
 
     for epoch in range(1, n_epochs + 1):
+        if isinstance(train_dataloader, DistributedSampler):
+            train_dataloader.sampler.set_epoch(epoch=epoch)
+
         _, best_bleu_score = train_epoch(
             train_data_loader=train_dataloader,
             val_data_loader=val_dataloader,
