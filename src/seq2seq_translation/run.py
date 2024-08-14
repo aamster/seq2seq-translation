@@ -310,8 +310,6 @@ if __name__ == '__main__':
     parser.add_argument('--eval_iters', default=200, type=int, help='How many batches of data to use for evaluation')
     parser.add_argument('--eval_out_path', help='Where to save eval metrics')
     parser.add_argument('--is_test', action='store_true', default=False)
-    # 72 is max num tokens in train set. Probably a better way to do this in inference
-    # without defining a limit
     parser.add_argument('--decoder_num_timesteps', type=int, default=10000)
     args = parser.parse_args()
 
