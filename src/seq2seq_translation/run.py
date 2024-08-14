@@ -71,17 +71,6 @@ def main(
     if not evaluate_only and n_epochs is None:
         raise ValueError('must provide n_epochs')
 
-    if os.environ.get('USE_WANDB') == 'True':
-        wandb.login()
-
-        signature = inspect.signature(main).parameters.keys()
-        wandb_run = wandb.init(
-            project="seq2seq_translation",
-            config={k: v for k, v in locals().items() if k in signature and k not in (
-            'data_path', 'model_weights_out_dir', 'model_weights_path', 'evaluate_only')},
-        )
-        wandb.config.update({"git_commit": git_commit})
-
     if use_ddp:
         ddp_world_size, master_process, seed_offset, ddp_local_rank = init_ddp()
     else:
@@ -90,6 +79,21 @@ def main(
         seed_offset = 0
         ddp_world_size = 1
         ddp_local_rank = None
+
+    os.environ['MASTER_PROCESS'] = str(master_process)
+
+    if os.environ.get('USE_WANDB') == 'True':
+        wandb.login()
+
+        signature = inspect.signature(main).parameters.keys()
+
+        if master_process:
+            wandb.init(
+                project="seq2seq_translation",
+                config={k: v for k, v in locals().items() if k in signature and k not in (
+                'data_path', 'model_weights_out_dir', 'model_weights_path', 'evaluate_only')},
+            )
+        wandb.config.update({"git_commit": git_commit})
 
     if seed is not None:
         rng = np.random.default_rng(1234)

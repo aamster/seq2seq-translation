@@ -168,7 +168,7 @@ def train_epoch(
         else:
             lr = encoder_optimizer.lr
 
-        if global_iter_num % eval_interval == 0:
+        if global_iter_num % eval_interval == 0 and os.environ['MASTER_PROCESS'] == 'True':
             metrics = estimate_performance_metrics(
                 train_loader=train_data_loader,
                 val_loader=val_data_loader,
