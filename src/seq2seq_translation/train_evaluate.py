@@ -69,8 +69,8 @@ def estimate_performance_metrics(
         for k in range(eval_iters):
             input_tensor, target_tensor, _ = next(data_loader_iter)
             if torch.cuda.is_available():
-                input_tensor = input_tensor.cuda()
-                target_tensor = target_tensor.cuda()
+                input_tensor = input_tensor.to(torch.device(os.environ['CUDA_DEVICE']))
+                target_tensor = target_tensor.to(torch.device(os.environ['CUDA_DEVICE']))
 
             if data_loader_name == 'train':
                 decoder_outputs, _, _, decoded_ids = inference(
@@ -151,8 +151,8 @@ def train_epoch(
         global_iter_num = (epoch-1) * len(train_data_loader) + epoch_iter
 
         if torch.cuda.is_available():
-            input_tensor = input_tensor.cuda()
-            target_tensor = target_tensor.cuda()
+            input_tensor = input_tensor.to(torch.device(os.environ['CUDA_DEVICE']))
+            target_tensor = target_tensor.to(torch.device(os.environ['CUDA_DEVICE']))
 
         if decay_learning_rate:
             lr = _get_lr(
@@ -260,8 +260,8 @@ def get_pred(
     input_tensor, target_tensor, dataset_name = data_loader.dataset[idx]
 
     if torch.cuda.is_available():
-        input_tensor = input_tensor.cuda()
-        target_tensor = target_tensor.cuda()
+        input_tensor = input_tensor.to(torch.device(os.environ['CUDA_DEVICE']))
+        target_tensor = target_tensor.to(torch.device(os.environ['CUDA_DEVICE']))
 
     _, _, _, decoded_ids = inference(
         encoder=encoder,
@@ -319,8 +319,8 @@ def evaluate(
         input_tensor, target_tensor, _ = data
 
         if torch.cuda.is_available():
-            input_tensor = input_tensor.cuda()
-            target_tensor = target_tensor.cuda()
+            input_tensor = input_tensor.to(torch.device(os.environ['CUDA_DEVICE']))
+            target_tensor = target_tensor.to(torch.device(os.environ['CUDA_DEVICE']))
 
         bleu = huggingface_evaluate.load('bleu')
 

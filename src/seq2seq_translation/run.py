@@ -8,6 +8,7 @@ import numpy as np
 import pandas as pd
 import torch
 import wandb
+from torch.distributed import destroy_process_group
 from torch.utils.data import DataLoader, TensorDataset, DistributedSampler
 
 from seq2seq_translation.attention import AttentionType
@@ -19,6 +20,7 @@ from seq2seq_translation.tokenization.sentencepiece_tokenizer import SentencePie
 from seq2seq_translation.rnn import EncoderRNN, DecoderRNN, AttnDecoderRNN
 from seq2seq_translation.train_evaluate import train, evaluate
 from seq2seq_translation.utils.ddp_utils import init_ddp
+from torch.nn.parallel import DistributedDataParallel as DDP
 
 
 def main(
@@ -194,6 +196,7 @@ def main(
             device = f"cuda:{ddp_local_rank}"
         else:
             device = 'cuda'
+        os.environ['CUDA_DEVICE'] = device
     else:
         if use_ddp:
             raise ValueError('Cannot use ddp on cpu')
@@ -254,6 +257,10 @@ def main(
         decoder.load_state_dict(
             torch.load(Path(model_weights_path) / 'decoder.pt', map_location=device))
 
+    if use_ddp:
+        encoder = DDP(encoder, device_ids=[ddp_local_rank])
+        decoder = DDP(decoder, device_ids=[ddp_local_rank])
+
     if compile:
         # requires PyTorch 2.0
         print("compiling the model... (takes a ~minute)")
@@ -292,6 +299,9 @@ def main(
             eval_interval=eval_interval,
             eval_iters=eval_iters
         )
+
+    if use_ddp:
+        destroy_process_group()
 
 
 if __name__ == '__main__':
