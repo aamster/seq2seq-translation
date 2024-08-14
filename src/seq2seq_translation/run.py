@@ -61,7 +61,7 @@ def main(
         eval_iters: int = 200,
         eval_out_path: Optional[str] = None,
         is_test: bool = False,
-        decoder_num_timesteps: Optional[int] = None
+        decoder_num_timesteps: int = 10000
 ):
     if seed is not None:
         np.random.seed(seed)
@@ -184,10 +184,6 @@ def main(
         num_layers=num_rnn_layers,
         dropout=dropout,
     ).to(device)
-
-    if decoder_num_timesteps is None:
-        decoder_num_timesteps = (
-            len(train_dset[datasets.get_max_target_length_index(from_indexes=train_idxs)][1]))
 
     if use_attention:
         decoder = AttnDecoderRNN(
@@ -316,7 +312,7 @@ if __name__ == '__main__':
     parser.add_argument('--is_test', action='store_true', default=False)
     # 72 is max num tokens in train set. Probably a better way to do this in inference
     # without defining a limit
-    parser.add_argument('--decoder_num_timesteps', type=int, default=72)
+    parser.add_argument('--decoder_num_timesteps', type=int, default=10000)
     args = parser.parse_args()
 
     if not any(args.attention_type == x.value for x in AttentionType):
