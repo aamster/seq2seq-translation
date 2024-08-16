@@ -85,7 +85,7 @@ def estimate_performance_metrics(
                 T = target_tensor.shape[-1]
 
                 loss = criterion(
-                    decoder_outputs[:, :T].reshape(batch_size * T, C),
+                    decoder_outputs.reshape(batch_size * T, C),
                     target_tensor.view(batch_size * T)
                 )
                 losses[k] = loss.item()
@@ -216,7 +216,7 @@ def train_epoch(
         T = target_tensor.shape[-1]
 
         loss = criterion(
-            decoder_outputs[:, :T].reshape(batch_size * T, C),
+            decoder_outputs.reshape(batch_size * T, C),
             target_tensor.view(batch_size * T)
         )
         prog_bar.set_postfix_str(f'Iter num {global_iter_num}: loss {loss.item():.4f}')

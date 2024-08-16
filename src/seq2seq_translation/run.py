@@ -31,8 +31,6 @@ def main(
         batch_size: int,
         datasets_dir: str,
         sentence_piece_model_dir: str,
-        source_tokenizer_train_path: str,
-        target_tokenizer_train_path: str,
         n_epochs: Optional[int] = None,
         model_weights_out_dir: Optional[str] = None,
         limit: Optional[int] = None,
@@ -51,7 +49,6 @@ def main(
         source_vocab_length: int = 13000,
         target_vocab_length: int = 13000,
         train_frac: float = 0.8,
-        dataset_sample_fracs: Optional[list[float]] = None,
         git_commit: Optional[str] = None,
         embedding_size: int = 128,
         num_rnn_layers: int = 1,
@@ -109,15 +106,6 @@ def main(
         target_lang=target_lang,
         is_test=False
     )
-    print('Creating source tokenizer train set')
-    datasets.create_source_tokenizer_train_set(
-        source_tokenizer_path=Path(source_tokenizer_train_path)
-    )
-    print('Creating target tokenizer train set')
-    datasets.create_target_tokenizer_train_set(
-        target_tokenizer_path=Path(target_tokenizer_train_path)
-    )
-
     splitter = DataSplitter(
         n_examples=len(datasets), train_frac=train_frac, rng=rng)
     train_idxs, test_idxs = splitter.split()
@@ -125,12 +113,10 @@ def main(
     source_tokenizer_model_path = Path(sentence_piece_model_dir) / f'{source_lang}'
     target_tokenizer_model_path = Path(sentence_piece_model_dir) / f'{target_lang}'
 
-    source_tokenizer = SentencePieceTokenizer(input_path=source_tokenizer_train_path,
-                                              vocab_size=source_vocab_length,
+    source_tokenizer = SentencePieceTokenizer(vocab_size=source_vocab_length,
                                               model_prefix=str(source_tokenizer_model_path))
 
-    target_tokenizer = SentencePieceTokenizer(input_path=target_tokenizer_train_path,
-                                              vocab_size=target_vocab_length,
+    target_tokenizer = SentencePieceTokenizer(vocab_size=target_vocab_length,
                                               model_prefix=str(target_tokenizer_model_path))
 
     print(f'{source_tokenizer.processor.vocab_size()} source tokens')
@@ -189,7 +175,7 @@ def main(
         collate_fn=collate_fn
     )
     test_data_loader = DataLoader(
-        dataset=TensorDataset(test_dset[0][0].unsqueeze(0), test_dset[0][1].unsqueeze(0), torch.tensor([]).unsqueeze(0)),
+        dataset=test_dset,
         shuffle=False,
         batch_size=batch_size,
         collate_fn=collate_fn
@@ -311,7 +297,7 @@ def main(
 if __name__ == '__main__':
     parser = ArgumentParser()
     parser.add_argument('--learning_rate', default=1e-3, type=float)
-    parser.add_argument('--max_input_length', type=int, default=None)
+    parser.add_argument('--max_input_length', type=int, default=300)
     parser.add_argument('--encoder_bidirectional', action='store_true', default=False)
     parser.add_argument('--use_attention', action='store_true', default=False)
     parser.add_argument('--batch_size', type=int, default=128)
@@ -334,13 +320,10 @@ if __name__ == '__main__':
     parser.add_argument('--min_freq', default=1, type=int)
     parser.add_argument('--source_lang', default='fr')
     parser.add_argument('--target_lang', default='en')
-    parser.add_argument('--source_tokenizer_train_path', required=True)
-    parser.add_argument('--target_tokenizer_train_path', required=True)
     parser.add_argument('--source_vocab_length', default=13000, type=int)
     parser.add_argument('--target_vocab_length', default=13000, type=int)
     parser.add_argument('--sentence_piece_model_dir', required=True)
     parser.add_argument('--train_frac', type=float, default=0.8)
-    parser.add_argument('--dataset_sample_fracs', default=None, help='amount to sample for each dataset. Should be of form "0.7 1.0"')
     parser.add_argument('--git_commit', default=None)
     parser.add_argument('--num_rnn_layers', type=int, default=1)
     parser.add_argument('--dropout', type=float, default=0.0)
@@ -363,10 +346,6 @@ if __name__ == '__main__':
         if args.wandb_api_key is None:
             raise ValueError('Must provide wandb_api_key')
         os.environ['WANDB_API_KEY'] = args.wandb_api_key
-    if args.dataset_sample_fracs:
-        dataset_sample_fracs = [float(x) for x in args.dataset_sample_fracs.split(' ')]
-    else:
-        dataset_sample_fracs = None
     main(encoder_bidirectional=args.encoder_bidirectional, batch_size=args.batch_size,
          model_weights_out_dir=args.model_weights_out_dir, n_epochs=args.n_epochs,
          limit=args.limit, use_attention=args.use_attention,
@@ -383,14 +362,11 @@ if __name__ == '__main__':
          min_freq=args.min_freq,
          source_lang=args.source_lang,
          target_lang=args.target_lang,
-         source_tokenizer_train_path=args.source_tokenizer_train_path,
-         target_tokenizer_train_path=args.target_tokenizer_train_path,
          source_vocab_length=args.source_vocab_length,
          target_vocab_length=args.target_vocab_length,
          sentence_piece_model_dir=args.sentence_piece_model_dir,
          datasets_dir=args.datasets_dir,
          train_frac=args.train_frac,
-         dataset_sample_fracs=dataset_sample_fracs,
          git_commit=args.git_commit,
          embedding_size=args.embedding_dim,
          num_rnn_layers=args.num_rnn_layers,

@@ -1,13 +1,13 @@
 import os
 from pathlib import Path
-from typing import List
+from typing import List, Optional
 
 import sentencepiece as spm
 import torch
 
 
 class SentencePieceTokenizer:
-    def __init__(self, input_path: str, model_prefix: str, vocab_size=13000):
+    def __init__(self, model_prefix: str, input_path: Optional[str] = None, vocab_size=13000):
         self._processor = spm.SentencePieceProcessor()
         self._options = dict(
             # input spec
@@ -50,6 +50,8 @@ class SentencePieceTokenizer:
         if Path(self._model).exists():
             self._processor.load(self._model)
         else:
+            if input_path is None:
+                raise ValueError('Must provide train_path if training')
             self.train()
 
     @property

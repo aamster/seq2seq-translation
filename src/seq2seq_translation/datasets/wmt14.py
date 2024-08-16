@@ -61,22 +61,29 @@ class WMT14(LanguagePairsDataset):
         return
 
     def _index_files(self):
-        with open(self._index_path) as f:
-            index = json.load(f)
-        return index['source'], index['target']
+        if self._split == 'test':
+            return None, None
+        else:
+            with open(self._index_path) as f:
+                index = json.load(f)
+            return index['source'], index['target']
 
     def __len__(self):
         return self._ds.info.splits[self._split].num_examples
 
     def __getitem__(self, idx):
-        with open(self._source_path, 'r') as f:
-            f.seek(self._source_index_sampled[idx])
-            source = f.readline().strip()
-            f.seek(0)
-        with open(self._target_path, 'r') as f:
-            f.seek(self._target_index_sampled[idx])
-            target = f.readline().strip()
-            f.seek(0)
+        if self._split == 'test':
+            source = self._ds['translation'][idx][self._source_lang]
+            target = self._ds['translation'][idx][self._target_lang]
+        else:
+            with open(self._source_path, 'r') as f:
+                f.seek(self._source_index_sampled[idx])
+                source = f.readline().strip()
+                f.seek(0)
+            with open(self._target_path, 'r') as f:
+                f.seek(self._target_index_sampled[idx])
+                target = f.readline().strip()
+                f.seek(0)
         return source, target, f'wmt14_{self._split}'
 
     @property
