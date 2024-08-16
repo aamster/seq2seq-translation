@@ -19,7 +19,7 @@ class LanguagePairsDatasets:
         if is_test:
             self._datasets = [
                 WMT14(
-                    out_dir=out_dir / 'wmt14_test',
+                    out_dir=out_dir,
                     source_lang=source_lang,
                     target_lang=target_lang,
                     split='test'
@@ -28,7 +28,7 @@ class LanguagePairsDatasets:
         else:
             self._datasets = [
                 WMT14(
-                    out_dir=out_dir / 'wmt14_train',
+                    out_dir=out_dir,
                     source_lang=source_lang,
                     target_lang=target_lang,
                     split='train'
@@ -91,27 +91,3 @@ class LanguagePairsDatasets:
             for i in range(dataset_index):
                 idx -= len(self._datasets[i])
         return idx
-
-    def get_max_target_length_index(self, from_indexes: np.ndarray) -> int:
-        """
-        Gets the argmax of the examples in the targets
-
-        :param from_indexes: Indices to choose from
-        :return:
-        """
-        max_len = 0
-        max_len_idx = None
-
-        for i, idx in enumerate(from_indexes):
-            dataset = self._get_dataset_for_idx(idx=idx)
-            idx = self._get_dataset_index(idx=idx)
-            offset_start = dataset.target_index[idx]
-            if idx == len(dataset)-1:
-                continue
-            else:
-                offset_end = dataset.target_index[idx+1]
-                input_length = offset_end - offset_start
-            if input_length > max_len:
-                max_len = input_length
-                max_len_idx = idx
-        return max_len_idx
