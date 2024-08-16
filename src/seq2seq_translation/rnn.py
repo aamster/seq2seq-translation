@@ -107,12 +107,12 @@ class DecoderRNN(nn.Module):
         self._pad_idx = pad_idx
         self._eos_token_id = eos_token_id
 
-    def forward(self, encoder_hidden, encoder_outputs=None, target_tensor=None):
+    def forward(self, encoder_hidden: torch.tensor, encoder_outputs=None, target_tensor=None):
         decoder_input, decoder_hidden, decoder_outputs = self.initialize_forward(
             encoder_hidden=encoder_hidden
         )
         batch_size = decoder_input.shape[0]
-        finished_mask = torch.zeros((batch_size, 1), dtype=torch.bool)
+        finished_mask = torch.zeros((batch_size, 1), dtype=torch.bool, device=encoder_hidden.device)
 
         outputs = []
         for t in range(self._max_len):
