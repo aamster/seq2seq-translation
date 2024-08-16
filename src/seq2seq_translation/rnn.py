@@ -286,7 +286,7 @@ class AttnDecoderRNN(DecoderRNN):
         attentions = []
 
         batch_size = decoder_input.shape[0]
-        finished_mask = torch.zeros((batch_size, 1), dtype=torch.bool)
+        finished_mask = torch.zeros((batch_size, 1), dtype=torch.bool, device=decoder_input.device)
 
         outputs = []
         for t in range(self._max_len):
