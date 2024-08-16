@@ -28,13 +28,13 @@ class EncoderRNN(nn.Module):
         self.dropout = nn.Dropout(dropout)
         self._pad_idx = pad_idx
 
-    def forward(self, input):
+    def forward(self, input, input_lengths):
         embedded = self.embedding(input)
         embedded = self.dropout(embedded)
 
         packed_embedded = torch.nn.utils.rnn.pack_padded_sequence(
             input=embedded,
-            lengths=torch.sum(input != self._pad_idx, dim=1),
+            lengths=input_lengths,
             batch_first=True,
             enforce_sorted=False
         )

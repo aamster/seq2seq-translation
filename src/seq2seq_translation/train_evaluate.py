@@ -67,17 +67,17 @@ def estimate_performance_metrics(
         blue_scores = torch.zeros(eval_iters)
 
         for k in range(eval_iters):
-            input_tensor, target_tensor, _ = next(data_loader_iter)
+            input_tensor, target_tensor, _, input_lengths = next(data_loader_iter)
             if torch.cuda.is_available():
                 input_tensor = input_tensor.to(torch.device(os.environ['CUDA_DEVICE']))
                 target_tensor = target_tensor.to(torch.device(os.environ['CUDA_DEVICE']))
 
             if data_loader_name == 'train':
                 decoder_outputs, _, _, decoded_ids = inference(
-                    encoder=encoder, decoder=decoder, input_tensor=input_tensor, target_tensor=target_tensor)
+                    encoder=encoder, decoder=decoder, input_tensor=input_tensor, target_tensor=target_tensor, input_lengths=input_lengths)
             else:
                 decoder_outputs, _, _, decoded_ids = inference(
-                    encoder=encoder, decoder=decoder, input_tensor=input_tensor)
+                    encoder=encoder, decoder=decoder, input_tensor=input_tensor, input_lengths=input_lengths)
 
             if data_loader_name == 'train':
                 batch_size = target_tensor.shape[0]
@@ -146,7 +146,7 @@ def train_epoch(
     total_loss = 0
     prog_bar = tqdm(train_data_loader, total=len(train_data_loader), desc=f'train epoch {epoch}')
     for epoch_iter, data in enumerate(prog_bar):
-        input_tensor, target_tensor, _ = data
+        input_tensor, target_tensor, _, input_lengths = data
 
         global_iter_num = (epoch-1) * len(train_data_loader) + epoch_iter
 
@@ -198,7 +198,7 @@ def train_epoch(
         encoder_optimizer.zero_grad()
         decoder_optimizer.zero_grad()
 
-        encoder_outputs, encoder_hidden = encoder(input_tensor)
+        encoder_outputs, encoder_hidden = encoder(input_tensor, input_lengths=input_lengths)
 
         decoder_res = decoder(
             encoder_outputs=encoder_outputs,
@@ -266,7 +266,8 @@ def get_pred(
     _, _, _, decoded_ids = inference(
         encoder=encoder,
         decoder=decoder,
-        input_tensor=input_tensor.reshape(1, -1)
+        input_tensor=input_tensor.reshape(1, -1),
+        input_lengths=[len(input_tensor)]
     )
 
     input = source_tokenizer.decode(input_tensor)
@@ -276,8 +277,8 @@ def get_pred(
 
 
 @torch.no_grad()
-def inference(encoder, decoder, input_tensor, target_tensor: Optional[torch.Tensor] = None):
-    encoder_outputs, encoder_hidden = encoder(input_tensor)
+def inference(encoder, decoder, input_tensor, input_lengths: list[int], target_tensor: Optional[torch.Tensor] = None):
+    encoder_outputs, encoder_hidden = encoder(input_tensor, input_lengths=input_lengths)
 
     decoder_res = decoder(
         encoder_outputs=encoder_outputs,
@@ -316,7 +317,7 @@ def evaluate(
     idx = 0
 
     for batch_idx, data in tqdm(enumerate(data_loader), total=len(data_loader), desc='eval'):
-        input_tensor, target_tensor, _ = data
+        input_tensor, target_tensor, _, input_lengths = data
 
         if torch.cuda.is_available():
             input_tensor = input_tensor.to(torch.device(os.environ['CUDA_DEVICE']))
@@ -330,7 +331,7 @@ def evaluate(
             tokenizer=target_tokenizer,
         )
         for i in range(len(input_tensor)):
-            pred = sequence_generator.generate(input_tensor=input_tensor[i])
+            pred = sequence_generator.generate(input_tensor=input_tensor[i], input_lengths=[input_lengths[i]])
             if isinstance(sequence_generator, BeamSearchSequenceGenerator):
                 # it returns list of top scoring beams. select best one, and get decoded text
                 pred = pred[0][0]

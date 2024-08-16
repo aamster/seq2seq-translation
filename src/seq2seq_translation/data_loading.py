@@ -31,6 +31,8 @@ class CollateFunction:
         self._pad_token_id = pad_token_id
 
     def __call__(self, batch):
+        src_lengths = [len(x[0]) for x in batch]
+
         src_batch, target_batch, dataset_name = zip(*batch)
         src_batch_padded = torch.nn.utils.rnn.pad_sequence(
             src_batch,
@@ -43,4 +45,4 @@ class CollateFunction:
             padding_value=self._pad_token_id
         )
 
-        return src_batch_padded, target_batch_padded, dataset_name
+        return src_batch_padded, target_batch_padded, dataset_name, src_lengths

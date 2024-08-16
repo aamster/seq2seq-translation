@@ -14,7 +14,7 @@ class SequenceGenerator(abc.ABC):
         self._tokenizer = tokenizer
 
     @abc.abstractmethod
-    def generate(self, input_tensor: torch.tensor):
+    def generate(self, input_tensor: torch.tensor, input_lengths: list[int]):
         raise NotImplementedError
 
 
@@ -27,8 +27,8 @@ class GreedySequenceGenerator(SequenceGenerator):
         )
         self._max_length = max_length
 
-    def generate(self, input_tensor: torch.tensor):
-        encoder_outputs, encoder_hidden = self._encoder(input_tensor.unsqueeze(0))
+    def generate(self, input_tensor: torch.tensor, input_lengths: list[int]):
+        encoder_outputs, encoder_hidden = self._encoder(input_tensor.unsqueeze(0), input_lengths=input_lengths)
 
         decoder_output, _, _ = self._decoder(
             encoder_hidden=encoder_hidden, encoder_outputs=encoder_outputs,
@@ -55,10 +55,10 @@ class BeamSearchSequenceGenerator(SequenceGenerator):
         self.beam_width = beam_width
         self.max_length = max_length
 
-    def generate(self, input_tensor: torch.tensor):
+    def generate(self, input_tensor: torch.tensor, input_lengths: list[int]):
         src_tensor = input_tensor.unsqueeze(0)
 
-        encoder_outputs, encoder_hidden = self._encoder(src_tensor)
+        encoder_outputs, encoder_hidden = self._encoder(src_tensor, input_lengths=input_lengths)
 
         initial_decoder_input, decoder_hidden, _ = self._decoder.initialize_forward(
             encoder_hidden=encoder_hidden
@@ -123,8 +123,8 @@ class SoftmaxWithTemperatureSequenceGenerator(SequenceGenerator):
         self._temperature = temperature
         self._max_length = max_length
 
-    def generate(self, input_tensor: torch.tensor):
-        encoder_outputs, encoder_hidden = self._encoder(input_tensor)
+    def generate(self, input_tensor: torch.tensor, input_lengths: list[int]):
+        encoder_outputs, encoder_hidden = self._encoder(input_tensor, input_lengths=input_lengths)
 
         decoder_input, decoder_hidden, _ = self._decoder.initialize_forward(
             encoder_hidden=encoder_hidden
