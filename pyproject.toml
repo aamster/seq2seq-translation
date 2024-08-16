@@ -8,7 +8,6 @@ version = "0.1.0"
 description = "seq2seq translation"
 dependencies = [
     "torch",
-    "torchtext",
     "sentencepiece",
     "wandb",
     "torchmetrics",
