@@ -9,6 +9,7 @@ import pandas as pd
 import torch
 import wandb
 from torch.distributed import destroy_process_group
+from torch.distributed.elastic.multiprocessing.errors import record
 from torch.utils.data import DataLoader, TensorDataset, DistributedSampler
 
 from seq2seq_translation.attention import AttentionType
@@ -23,6 +24,7 @@ from seq2seq_translation.utils.ddp_utils import init_ddp
 from torch.nn.parallel import DistributedDataParallel as DDP
 
 
+@record
 def main(
         encoder_hidden_dim: int,
         decoder_hidden_dim: int,
@@ -46,8 +48,6 @@ def main(
         min_freq: int = 1,
         source_lang: str = 'en',
         target_lang: str = 'fr',
-        source_vocab_length: int = 13000,
-        target_vocab_length: int = 13000,
         train_frac: float = 0.8,
         git_commit: Optional[str] = None,
         embedding_size: int = 128,
@@ -113,11 +113,9 @@ def main(
     source_tokenizer_model_path = Path(sentence_piece_model_dir) / f'{source_lang}'
     target_tokenizer_model_path = Path(sentence_piece_model_dir) / f'{target_lang}'
 
-    source_tokenizer = SentencePieceTokenizer(vocab_size=source_vocab_length,
-                                              model_prefix=str(source_tokenizer_model_path))
+    source_tokenizer = SentencePieceTokenizer(model_prefix=str(source_tokenizer_model_path))
 
-    target_tokenizer = SentencePieceTokenizer(vocab_size=target_vocab_length,
-                                              model_prefix=str(target_tokenizer_model_path))
+    target_tokenizer = SentencePieceTokenizer(model_prefix=str(target_tokenizer_model_path))
 
     print(f'{source_tokenizer.processor.vocab_size()} source tokens')
     print(f'{target_tokenizer.processor.vocab_size()} target tokens')
@@ -320,8 +318,6 @@ if __name__ == '__main__':
     parser.add_argument('--min_freq', default=1, type=int)
     parser.add_argument('--source_lang', default='fr')
     parser.add_argument('--target_lang', default='en')
-    parser.add_argument('--source_vocab_length', default=13000, type=int)
-    parser.add_argument('--target_vocab_length', default=13000, type=int)
     parser.add_argument('--sentence_piece_model_dir', required=True)
     parser.add_argument('--train_frac', type=float, default=0.8)
     parser.add_argument('--git_commit', default=None)
@@ -362,8 +358,6 @@ if __name__ == '__main__':
          min_freq=args.min_freq,
          source_lang=args.source_lang,
          target_lang=args.target_lang,
-         source_vocab_length=args.source_vocab_length,
-         target_vocab_length=args.target_vocab_length,
          sentence_piece_model_dir=args.sentence_piece_model_dir,
          datasets_dir=args.datasets_dir,
          train_frac=args.train_frac,
