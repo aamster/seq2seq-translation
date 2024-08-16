@@ -306,7 +306,7 @@ class AttnDecoderRNN(DecoderRNN):
 
             finished_mask |= (decoder_input == self._eos_token_id)
 
-            decoder_input = decoder_input.masked_fill(finished_mask, self._eos_token_id)
+            decoder_input.masked_fill_(finished_mask, self._eos_token_id)
 
             if return_attentions:
                 attentions.append(attention_weights)
