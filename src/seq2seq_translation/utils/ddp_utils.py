@@ -39,7 +39,7 @@ class SingleProcessContextManager:
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         return
-    
+
     @property
     def is_master_process(self) -> bool:
         return True

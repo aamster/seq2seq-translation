@@ -76,21 +76,20 @@ def main(
     with distributed_context_manager as distributed_context:
         os.environ['MASTER_PROCESS'] = str(distributed_context.is_master_process)
 
-        if os.environ.get('USE_WANDB') == 'True':
+        if os.environ.get('USE_WANDB') == 'True' and distributed_context.is_master_process:
             wandb.login()
 
             signature = inspect.signature(main).parameters.keys()
 
-            if distributed_context.is_master_process:
-                wandb.init(
-                    project="seq2seq_translation",
-                    config={k: v for k, v in locals().items() if k in signature and k not in (
-                    'data_path', 'model_weights_out_dir', 'model_weights_path', 'evaluate_only')},
-                )
+            wandb.init(
+                project="seq2seq_translation",
+                config={k: v for k, v in locals().items() if k in signature and k not in (
+                'data_path', 'model_weights_out_dir', 'model_weights_path', 'evaluate_only')},
+            )
             wandb.config.update({"git_commit": git_commit})
 
         if seed is not None:
-            rng = np.random.default_rng(1234)
+            rng = np.random.default_rng(seed=seed)
 
             # seed_offset used to encourage randomness across processes in ddp
             torch.random.manual_seed(seed + distributed_context.seed_offset)
@@ -176,17 +175,12 @@ def main(
             collate_fn=collate_fn
         )
 
-        if torch.cuda.is_available():
-            if use_ddp:
-                device = f"cuda:{distributed_context.ddp_local_rank}"
-            else:
-                device = 'cuda'
-            os.environ['CUDA_DEVICE'] = device
-        else:
-            if use_ddp:
-                raise ValueError('Cannot use ddp on cpu')
-            else:
-                device = 'cpu'
+        device = 'cuda' if torch.cuda.is_available() else 'cpu'
+        
+        if use_ddp:
+            device = f'{device}:{distributed_context.ddp_local_rank}'
+        os.environ['DEVICE'] = device
+
         device = torch.device(device)
 
         encoder = EncoderRNN(
