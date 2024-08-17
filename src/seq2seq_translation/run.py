@@ -373,5 +373,6 @@ if __name__ == '__main__':
          eval_iters=args.eval_iters,
          eval_out_path=args.eval_out_path,
          is_test=args.is_test,
-         decoder_num_timesteps=args.decoder_num_timesteps
+         decoder_num_timesteps=args.decoder_num_timesteps,
+         use_ddp=args.use_ddp
          )
