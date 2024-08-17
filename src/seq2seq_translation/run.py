@@ -8,9 +8,8 @@ import numpy as np
 import pandas as pd
 import torch
 import wandb
-from torch.distributed import destroy_process_group
 from torch.distributed.elastic.multiprocessing.errors import record
-from torch.utils.data import DataLoader, TensorDataset, DistributedSampler
+from torch.utils.data import DataLoader, DistributedSampler
 
 from seq2seq_translation.attention import AttentionType
 from seq2seq_translation.data_loading import \
@@ -20,7 +19,8 @@ from seq2seq_translation.sentence_pairs_dataset import SentencePairsDataset
 from seq2seq_translation.tokenization.sentencepiece_tokenizer import SentencePieceTokenizer
 from seq2seq_translation.rnn import EncoderRNN, DecoderRNN, AttnDecoderRNN
 from seq2seq_translation.train_evaluate import train, evaluate
-from seq2seq_translation.utils.ddp_utils import init_ddp
+from seq2seq_translation.utils.ddp_utils import DistributedContextManager, \
+    SingleProcessContextManager
 from torch.nn.parallel import DistributedDataParallel as DDP
 
 
@@ -69,227 +69,221 @@ def main(
         raise ValueError('must provide n_epochs')
 
     if use_ddp:
-        ddp_world_size, master_process, seed_offset, ddp_local_rank = init_ddp()
+        distributed_context_manager = DistributedContextManager()
     else:
-        # if not ddp, we are running on a single gpu, and one process
-        master_process = True
-        seed_offset = 0
-        ddp_world_size = 1
-        ddp_local_rank = None
+        distributed_context_manager = SingleProcessContextManager()
 
-    os.environ['MASTER_PROCESS'] = str(master_process)
+    with distributed_context_manager as distributed_context:
+        os.environ['MASTER_PROCESS'] = str(distributed_context.is_master_process)
 
-    if os.environ.get('USE_WANDB') == 'True':
-        wandb.login()
+        if os.environ.get('USE_WANDB') == 'True':
+            wandb.login()
 
-        signature = inspect.signature(main).parameters.keys()
+            signature = inspect.signature(main).parameters.keys()
 
-        if master_process:
-            wandb.init(
-                project="seq2seq_translation",
-                config={k: v for k, v in locals().items() if k in signature and k not in (
-                'data_path', 'model_weights_out_dir', 'model_weights_path', 'evaluate_only')},
-            )
-        wandb.config.update({"git_commit": git_commit})
+            if distributed_context.is_master_process:
+                wandb.init(
+                    project="seq2seq_translation",
+                    config={k: v for k, v in locals().items() if k in signature and k not in (
+                    'data_path', 'model_weights_out_dir', 'model_weights_path', 'evaluate_only')},
+                )
+            wandb.config.update({"git_commit": git_commit})
 
-    if seed is not None:
-        rng = np.random.default_rng(1234)
+        if seed is not None:
+            rng = np.random.default_rng(1234)
 
-        # seed_offset used to encourage randomness across processes in ddp
-        torch.random.manual_seed(seed + seed_offset)
-    else:
-        rng = None
+            # seed_offset used to encourage randomness across processes in ddp
+            torch.random.manual_seed(seed + distributed_context.seed_offset)
+        else:
+            rng = None
 
-    datasets = LanguagePairsDatasets(
-        out_dir=Path(datasets_dir),
-        source_lang=source_lang,
-        target_lang=target_lang,
-        is_test=False
-    )
-    splitter = DataSplitter(
-        n_examples=len(datasets), train_frac=train_frac, rng=rng)
-    train_idxs, test_idxs = splitter.split()
-
-    source_tokenizer_model_path = Path(sentence_piece_model_dir) / f'{source_lang}'
-    target_tokenizer_model_path = Path(sentence_piece_model_dir) / f'{target_lang}'
-
-    source_tokenizer = SentencePieceTokenizer(model_prefix=str(source_tokenizer_model_path))
-
-    target_tokenizer = SentencePieceTokenizer(model_prefix=str(target_tokenizer_model_path))
-
-    print(f'{source_tokenizer.processor.vocab_size()} source tokens')
-    print(f'{target_tokenizer.processor.vocab_size()} target tokens')
-
-    if limit is not None:
-        train_idxs = train_idxs[:int(len(train_idxs) * limit)]
-        test_idxs = test_idxs[:int(len(test_idxs) * limit)]
-        print(f'Number of train examples after limiting: {len(train_idxs)}')
-        print(f'Number of val examples after limiting: {len(test_idxs)}')
-
-    train_dset = SentencePairsDataset(
-        datasets=datasets,
-        idxs=train_idxs,
-        source_tokenizer=source_tokenizer,
-        target_tokenizer=target_tokenizer,
-        max_length=max_input_length,
-    )
-    val_dset = SentencePairsDataset(
-        datasets=datasets,
-        idxs=test_idxs,
-        source_tokenizer=source_tokenizer,
-        target_tokenizer=target_tokenizer,
-        max_length=None,
-    )
-
-    test_datasets = LanguagePairsDatasets(
+        datasets = LanguagePairsDatasets(
             out_dir=Path(datasets_dir),
             source_lang=source_lang,
             target_lang=target_lang,
-            is_test=True
-    )
+            is_test=False
+        )
+        splitter = DataSplitter(
+            n_examples=len(datasets), train_frac=train_frac, rng=rng)
+        train_idxs, test_idxs = splitter.split()
 
-    test_dset = SentencePairsDataset(
-        datasets=test_datasets,
-        idxs=np.arange(len(test_datasets)),
-        source_tokenizer=source_tokenizer,
-        target_tokenizer=target_tokenizer,
-        max_length=None,
-    )
+        source_tokenizer_model_path = Path(sentence_piece_model_dir) / f'{source_lang}'
+        target_tokenizer_model_path = Path(sentence_piece_model_dir) / f'{target_lang}'
 
-    collate_fn = CollateFunction(pad_token_id=source_tokenizer.processor.pad_id())
+        source_tokenizer = SentencePieceTokenizer(model_prefix=str(source_tokenizer_model_path))
 
-    train_sampler = DistributedSampler(train_dset) if use_ddp else None
-    train_data_loader = DataLoader(
-        dataset=train_dset,
-        shuffle=(train_sampler is None),
-        batch_size=batch_size,
-        collate_fn=collate_fn,
-        sampler=train_sampler
-    )
-    val_data_loader = DataLoader(
-        dataset=val_dset,
-        shuffle=False,
-        batch_size=batch_size,
-        collate_fn=collate_fn
-    )
-    test_data_loader = DataLoader(
-        dataset=test_dset,
-        shuffle=False,
-        batch_size=batch_size,
-        collate_fn=collate_fn
-    )
+        target_tokenizer = SentencePieceTokenizer(model_prefix=str(target_tokenizer_model_path))
 
-    if torch.cuda.is_available():
-        if use_ddp:
-            device = f"cuda:{ddp_local_rank}"
+        print(f'{source_tokenizer.processor.vocab_size()} source tokens')
+        print(f'{target_tokenizer.processor.vocab_size()} target tokens')
+
+        if limit is not None:
+            train_idxs = train_idxs[:int(len(train_idxs) * limit)]
+            test_idxs = test_idxs[:int(len(test_idxs) * limit)]
+            print(f'Number of train examples after limiting: {len(train_idxs)}')
+            print(f'Number of val examples after limiting: {len(test_idxs)}')
+
+        train_dset = SentencePairsDataset(
+            datasets=datasets,
+            idxs=train_idxs,
+            source_tokenizer=source_tokenizer,
+            target_tokenizer=target_tokenizer,
+            max_length=max_input_length,
+        )
+        val_dset = SentencePairsDataset(
+            datasets=datasets,
+            idxs=test_idxs,
+            source_tokenizer=source_tokenizer,
+            target_tokenizer=target_tokenizer,
+            max_length=None,
+        )
+
+        test_datasets = LanguagePairsDatasets(
+                out_dir=Path(datasets_dir),
+                source_lang=source_lang,
+                target_lang=target_lang,
+                is_test=True
+        )
+
+        test_dset = SentencePairsDataset(
+            datasets=test_datasets,
+            idxs=np.arange(len(test_datasets)),
+            source_tokenizer=source_tokenizer,
+            target_tokenizer=target_tokenizer,
+            max_length=None,
+        )
+
+        collate_fn = CollateFunction(pad_token_id=source_tokenizer.processor.pad_id())
+
+        train_sampler = DistributedSampler(train_dset) if use_ddp else None
+        train_data_loader = DataLoader(
+            dataset=train_dset,
+            shuffle=(train_sampler is None),
+            batch_size=batch_size,
+            collate_fn=collate_fn,
+            sampler=train_sampler
+        )
+        val_data_loader = DataLoader(
+            dataset=val_dset,
+            shuffle=False,
+            batch_size=batch_size,
+            collate_fn=collate_fn
+        )
+        test_data_loader = DataLoader(
+            dataset=test_dset,
+            shuffle=False,
+            batch_size=batch_size,
+            collate_fn=collate_fn
+        )
+
+        if torch.cuda.is_available():
+            if use_ddp:
+                device = f"cuda:{distributed_context.ddp_local_rank}"
+            else:
+                device = 'cuda'
+            os.environ['CUDA_DEVICE'] = device
         else:
-            device = 'cuda'
-        os.environ['CUDA_DEVICE'] = device
-    else:
-        if use_ddp:
-            raise ValueError('Cannot use ddp on cpu')
-        else:
-            device = 'cpu'
-    device = torch.device(device)
+            if use_ddp:
+                raise ValueError('Cannot use ddp on cpu')
+            else:
+                device = 'cpu'
+        device = torch.device(device)
 
-    encoder = EncoderRNN(
-        input_size=source_tokenizer.processor.vocab_size(),
-        hidden_size=encoder_hidden_dim,
-        bidirectional=encoder_bidirectional,
-        freeze_embedding_layer=freeze_embedding_layer,
-        pad_idx=source_tokenizer.processor.pad_id(),
-        embedding_dim=embedding_size,
-        num_layers=num_rnn_layers,
-        dropout=dropout,
-    ).to(device)
-
-    if use_attention:
-        decoder = AttnDecoderRNN(
-            hidden_size=decoder_hidden_dim,
-            attention_size=attention_dim,
-            output_size=target_tokenizer.processor.vocab_size(),
-            encoder_bidirectional=encoder_bidirectional,
-            max_len=decoder_num_timesteps,
+        encoder = EncoderRNN(
+            input_size=source_tokenizer.processor.vocab_size(),
+            hidden_size=encoder_hidden_dim,
+            bidirectional=encoder_bidirectional,
             freeze_embedding_layer=freeze_embedding_layer,
-            attention_type=attention_type,
-            encoder_output_size=encoder.output_size,
             pad_idx=source_tokenizer.processor.pad_id(),
-            num_embeddings=target_tokenizer.processor.vocab_size(),
-            sos_token_id=source_tokenizer.processor.bos_id(),
             embedding_dim=embedding_size,
             num_layers=num_rnn_layers,
             dropout=dropout,
-            eos_token_id=target_tokenizer.processor.eos_id()
-        ).to(device)
-    else:
-        decoder = DecoderRNN(
-            hidden_size=decoder_hidden_dim,
-            output_size=target_tokenizer.processor.vocab_size(),
-            max_len=decoder_num_timesteps,
-            freeze_embedding_layer=freeze_embedding_layer,
-            pad_idx=source_tokenizer.processor.pad_id(),
-            encoder_output_size=encoder.output_size,
-            num_embeddings=target_tokenizer.processor.vocab_size(),
-            sos_token_id=source_tokenizer.processor.bos_id(),
-            context_size=int(encoder.hidden_size / num_rnn_layers),
-            embedding_dim=embedding_size,
-            num_layers=num_rnn_layers,
-            dropout=dropout,
-            encoder_bidirectional=encoder_bidirectional,
-            eos_token_id=target_tokenizer.processor.eos_id()
         ).to(device)
 
-    if model_weights_path is not None:
-        encoder.load_state_dict(
-            torch.load(Path(model_weights_path) / 'encoder.pt', map_location=device))
-        decoder.load_state_dict(
-            torch.load(Path(model_weights_path) / 'decoder.pt', map_location=device))
+        if use_attention:
+            decoder = AttnDecoderRNN(
+                hidden_size=decoder_hidden_dim,
+                attention_size=attention_dim,
+                output_size=target_tokenizer.processor.vocab_size(),
+                encoder_bidirectional=encoder_bidirectional,
+                max_len=decoder_num_timesteps,
+                freeze_embedding_layer=freeze_embedding_layer,
+                attention_type=attention_type,
+                encoder_output_size=encoder.output_size,
+                pad_idx=source_tokenizer.processor.pad_id(),
+                num_embeddings=target_tokenizer.processor.vocab_size(),
+                sos_token_id=source_tokenizer.processor.bos_id(),
+                embedding_dim=embedding_size,
+                num_layers=num_rnn_layers,
+                dropout=dropout,
+                eos_token_id=target_tokenizer.processor.eos_id()
+            ).to(device)
+        else:
+            decoder = DecoderRNN(
+                hidden_size=decoder_hidden_dim,
+                output_size=target_tokenizer.processor.vocab_size(),
+                max_len=decoder_num_timesteps,
+                freeze_embedding_layer=freeze_embedding_layer,
+                pad_idx=source_tokenizer.processor.pad_id(),
+                encoder_output_size=encoder.output_size,
+                num_embeddings=target_tokenizer.processor.vocab_size(),
+                sos_token_id=source_tokenizer.processor.bos_id(),
+                context_size=int(encoder.hidden_size / num_rnn_layers),
+                embedding_dim=embedding_size,
+                num_layers=num_rnn_layers,
+                dropout=dropout,
+                encoder_bidirectional=encoder_bidirectional,
+                eos_token_id=target_tokenizer.processor.eos_id()
+            ).to(device)
 
-    if use_ddp:
-        encoder = DDP(encoder, device_ids=[ddp_local_rank])
-        decoder = DDP(decoder, device_ids=[ddp_local_rank])
+        if model_weights_path is not None:
+            encoder.load_state_dict(
+                torch.load(Path(model_weights_path) / 'encoder.pt', map_location=device))
+            decoder.load_state_dict(
+                torch.load(Path(model_weights_path) / 'decoder.pt', map_location=device))
 
-    if compile:
-        # requires PyTorch 2.0
-        print("compiling the model... (takes a ~minute)")
-        encoder = torch.compile(encoder)
-        decoder = torch.compile(decoder)
+        if use_ddp:
+            encoder = DDP(encoder, device_ids=[distributed_context.ddp_local_rank])
+            decoder = DDP(decoder, device_ids=[distributed_context.ddp_local_rank])
 
-    if evaluate_only:
-        val_decoded_text, val_targets, val_bleu, val_bleus, input_lengths = evaluate(
-            encoder=encoder,
-            decoder=decoder,
-            data_loader=test_data_loader if is_test else val_data_loader,
-            source_tokenizer=source_tokenizer,
-            target_tokenizer=target_tokenizer,
-        )
-        print(f'bleu: {val_bleu}')
-        df = pd.DataFrame(
-            {'bleu': val_bleus,
-             'input_length': input_lengths,
-             'pred': val_decoded_text,
-             'target': val_targets
-             })
-        df.to_csv(eval_out_path, index=False)
-    else:
-        train(
-            train_dataloader=train_data_loader,
-            val_dataloader=val_data_loader,
-            encoder=encoder,
-            decoder=decoder,
-            model_weights_out_dir=model_weights_out_dir,
-            n_epochs=n_epochs,
-            source_tokenizer=source_tokenizer,
-            target_tokenizer=target_tokenizer,
-            learning_rate=learning_rate,
-            weight_decay=weight_decay,
-            decay_learning_rate=decay_learning_rate,
-            eval_interval=eval_interval,
-            eval_iters=eval_iters
-        )
+        if compile:
+            # requires PyTorch 2.0
+            print("compiling the model... (takes a ~minute)")
+            encoder = torch.compile(encoder)
+            decoder = torch.compile(decoder)
 
-    if use_ddp:
-        destroy_process_group()
+        if evaluate_only:
+            val_decoded_text, val_targets, val_bleu, val_bleus, input_lengths = evaluate(
+                encoder=encoder,
+                decoder=decoder,
+                data_loader=test_data_loader if is_test else val_data_loader,
+                source_tokenizer=source_tokenizer,
+                target_tokenizer=target_tokenizer,
+            )
+            print(f'bleu: {val_bleu}')
+            df = pd.DataFrame(
+                {'bleu': val_bleus,
+                 'input_length': input_lengths,
+                 'pred': val_decoded_text,
+                 'target': val_targets
+                 })
+            df.to_csv(eval_out_path, index=False)
+        else:
+            train(
+                train_dataloader=train_data_loader,
+                val_dataloader=val_data_loader,
+                encoder=encoder,
+                decoder=decoder,
+                model_weights_out_dir=model_weights_out_dir,
+                n_epochs=n_epochs,
+                source_tokenizer=source_tokenizer,
+                target_tokenizer=target_tokenizer,
+                learning_rate=learning_rate,
+                weight_decay=weight_decay,
+                decay_learning_rate=decay_learning_rate,
+                eval_interval=eval_interval,
+                eval_iters=eval_iters
+            )
 
 
 if __name__ == '__main__':
