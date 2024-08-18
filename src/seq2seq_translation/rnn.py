@@ -1,4 +1,5 @@
 import abc
+import os
 from typing import Optional
 
 import torch
@@ -199,7 +200,7 @@ class DecoderRNN(nn.Module):
         decoder_input = torch.empty(
             batch_size, 1,
             dtype=torch.long,
-            device=torch.device("cuda" if torch.cuda.is_available() else "cpu")
+            device=torch.device(os.environ['DEVICE'])
         ).fill_(self._sos_token_id)
         return decoder_input, decoder_hidden, []
 
