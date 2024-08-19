@@ -1,4 +1,5 @@
 import os
+from datetime import timedelta
 
 from torch.distributed import init_process_group, destroy_process_group
 
@@ -10,7 +11,7 @@ class DistributedContextManager:
         self._ddp_local_rank = None
 
     def __enter__(self):
-        init_process_group(backend=self._backend)
+        init_process_group(backend=self._backend, timeout=timedelta(minutes=30))
         ddp_rank = int(os.environ['RANK'])
         ddp_local_rank = int(os.environ['LOCAL_RANK'])
         self._ddp_rank = ddp_rank
