@@ -76,11 +76,11 @@ class WMT14(LanguagePairsDataset):
             source = self._ds['translation'][idx][self._source_lang]
             target = self._ds['translation'][idx][self._target_lang]
         else:
-            with open(self._source_path, 'r') as f:
+            with open(self._source_path, 'r', encoding='utf-8') as f:
                 f.seek(self._source_index_sampled[idx])
                 source = f.readline().strip()
                 f.seek(0)
-            with open(self._target_path, 'r') as f:
+            with open(self._target_path, 'r', encoding='utf-8') as f:
                 f.seek(self._target_index_sampled[idx])
                 target = f.readline().strip()
                 f.seek(0)

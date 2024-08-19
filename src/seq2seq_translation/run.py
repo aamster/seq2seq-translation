@@ -134,7 +134,7 @@ def main(
             idxs=test_idxs,
             source_tokenizer=source_tokenizer,
             target_tokenizer=target_tokenizer,
-            max_length=None,
+            max_length=max_input_length,
         )
 
         test_datasets = LanguagePairsDatasets(

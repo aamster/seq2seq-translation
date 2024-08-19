@@ -66,7 +66,7 @@ def estimate_performance_metrics(
             losses = None
         blue_scores = torch.zeros(eval_iters)
 
-        for k in range(eval_iters):
+        for k in tqdm(range(eval_iters), desc=f'Evaluate performance on {data_loader_name} set', leave=False):
             input_tensor, target_tensor, _, input_lengths = next(data_loader_iter)
             if torch.cuda.is_available():
                 input_tensor = input_tensor.to(torch.device(os.environ['DEVICE']))
@@ -77,7 +77,7 @@ def estimate_performance_metrics(
                     encoder=encoder, decoder=decoder, input_tensor=input_tensor, target_tensor=target_tensor, input_lengths=input_lengths)
             else:
                 decoder_outputs, _, _, decoded_ids = inference(
-                    encoder=encoder, decoder=decoder, input_tensor=input_tensor, input_lengths=input_lengths)
+                    encoder=encoder, decoder=decoder, input_tensor=input_tensor, input_lengths=input_lengths, decoder_softmax_output=False)
 
             if data_loader_name == 'train':
                 batch_size = target_tensor.shape[0]
@@ -267,7 +267,8 @@ def get_pred(
         encoder=encoder,
         decoder=decoder,
         input_tensor=input_tensor.reshape(1, -1),
-        input_lengths=[len(input_tensor)]
+        input_lengths=[len(input_tensor)],
+        decoder_softmax_output=False
     )
 
     input = source_tokenizer.decode(input_tensor)
@@ -277,13 +278,14 @@ def get_pred(
 
 
 @torch.no_grad()
-def inference(encoder, decoder, input_tensor, input_lengths: list[int], target_tensor: Optional[torch.Tensor] = None):
+def inference(encoder, decoder, input_tensor, input_lengths: list[int], target_tensor: Optional[torch.Tensor] = None, decoder_softmax_output: bool = True):
     encoder_outputs, encoder_hidden = encoder(input_tensor, input_lengths=input_lengths)
 
     decoder_res = decoder(
         encoder_outputs=encoder_outputs,
         encoder_hidden=encoder_hidden,
-        target_tensor=target_tensor
+        target_tensor=target_tensor,
+        softmax_output=decoder_softmax_output
     )
 
     if len(decoder_res) == 3:
@@ -292,8 +294,11 @@ def inference(encoder, decoder, input_tensor, input_lengths: list[int], target_t
         decoder_outputs, decoder_hidden = decoder_res
         decoder_attn = None
 
-    _, topi = decoder_outputs.topk(1)
-    decoded_ids = topi.squeeze()
+    if decoder_softmax_output:
+        _, topi = decoder_outputs.topk(1)
+        decoded_ids = topi.squeeze()
+    else:
+        decoded_ids = decoder_outputs
 
     return decoder_outputs, decoder_hidden, decoder_attn, decoded_ids
 

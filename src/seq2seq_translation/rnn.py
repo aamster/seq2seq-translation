@@ -277,7 +277,7 @@ class AttnDecoderRNN(DecoderRNN):
             raise ValueError(f'Unknown attention type {attention_type}')
 
     def forward(self, encoder_hidden: torch.tensor, encoder_outputs=None, target_tensor=None,
-                return_attentions: bool = False):
+                return_attentions: bool = False, softmax_output: bool = True):
         if encoder_outputs is None:
             raise ValueError(f'encoder outputs must be given for {type(self)}')
 
@@ -303,7 +303,10 @@ class AttnDecoderRNN(DecoderRNN):
                 t=t
             )
 
-            outputs.append(decoder_output)
+            if softmax_output:
+                outputs.append(decoder_output)
+            else:
+                outputs.append(decoder_output.topk(k=1, dim=-1)[1].squeeze())
 
             finished_mask |= (decoder_input == self._eos_token_id)
 
@@ -312,8 +315,12 @@ class AttnDecoderRNN(DecoderRNN):
             if return_attentions:
                 attentions.append(attention_weights)
 
-        decoder_outputs = torch.cat(outputs, dim=1)  # Shape: [batch_size, sequence_length, hidden_size]
-        decoder_outputs = F.log_softmax(decoder_outputs, dim=-1)
+        if softmax_output:
+            decoder_outputs = torch.cat(
+                outputs, dim=1)  # Shape: [batch_size, sequence_length, hidden_size]
+            decoder_outputs = F.log_softmax(decoder_outputs, dim=-1)
+        else:
+            decoder_outputs = torch.stack(outputs).T
 
         if return_attentions:
             attentions = torch.cat(attentions, dim=1)
