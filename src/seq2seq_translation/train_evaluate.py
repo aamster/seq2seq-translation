@@ -84,6 +84,11 @@ def estimate_performance_metrics(
                 C = decoder_outputs.shape[-1]
                 T = target_tensor.shape[-1]
 
+                # if decoder_outputs shorter than target_tensor, pad it so that shapes match
+                decoder_outputs = torch.nn.functional.pad(
+                    decoder_outputs, (0, 0, 0, 0, 0, max(0, target_tensor.shape[1] - decoder_outputs.shape[1])),
+                    value=train_loader.dataset.target_tokenizer.processor.pad_id())
+
                 loss = criterion(
                     decoder_outputs.reshape(batch_size * T, C),
                     target_tensor.view(batch_size * T)
@@ -214,6 +219,12 @@ def train_epoch(
         batch_size = target_tensor.shape[0]
         C = decoder_outputs.shape[-1]
         T = target_tensor.shape[-1]
+
+        # if decoder_outputs shorter than target_tensor, pad it so that shapes match
+        decoder_outputs = torch.nn.functional.pad(
+            decoder_outputs,
+            (0, 0, 0, 0, 0, max(0, target_tensor.shape[1] - decoder_outputs.shape[1])),
+            value=train_data_loader.dataset.target_tokenizer.processor.pad_id())
 
         loss = criterion(
             decoder_outputs.reshape(batch_size * T, C),

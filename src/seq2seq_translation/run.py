@@ -127,6 +127,8 @@ def main(
             idxs=train_idxs,
             source_tokenizer=source_tokenizer,
             target_tokenizer=target_tokenizer,
+            # TODO would be better if didn't have to truncate
+            # consider chunking?
             max_length=max_input_length,
         )
         val_dset = SentencePairsDataset(
@@ -134,6 +136,8 @@ def main(
             idxs=test_idxs,
             source_tokenizer=source_tokenizer,
             target_tokenizer=target_tokenizer,
+            # TODO would be better if didn't have to truncate
+            # consider chunking?
             max_length=max_input_length,
         )
 
