@@ -1,6 +1,7 @@
 import inspect
 import os
 from argparse import ArgumentParser
+from collections import OrderedDict
 from pathlib import Path
 from typing import Optional
 
@@ -23,6 +24,20 @@ from seq2seq_translation.utils.ddp_utils import DistributedContextManager, \
     SingleProcessContextManager
 from torch.nn.parallel import DistributedDataParallel as DDP
 
+
+def _remove_module_from_state_dict(state_dict: dict):
+    """
+    fixing an issue. when training with ddp should have saved model.module.state_dict() instead of model.state_dict()
+    removing "module" from keys
+    :param state_dict:
+    :return:
+    """
+
+    new_state_dict = OrderedDict()
+    for k, v in state_dict.items():
+        name = k.replace('module', '')  # remove `module.` prefix
+        new_state_dict[name] = v
+    return new_state_dict
 
 @record
 def main(
@@ -235,10 +250,18 @@ def main(
             ).to(device)
 
         if model_weights_path is not None:
-            encoder.load_state_dict(
-                torch.load(Path(model_weights_path) / 'encoder.pt', map_location=device))
-            decoder.load_state_dict(
-                torch.load(Path(model_weights_path) / 'decoder.pt', map_location=device))
+            try:
+                encoder.load_state_dict(
+                    torch.load(Path(model_weights_path) / 'encoder.pt', map_location=device))
+                decoder.load_state_dict(
+                    torch.load(Path(model_weights_path) / 'decoder.pt', map_location=device))
+            except RuntimeError:
+                encoder.load_state_dict(
+                    _remove_module_from_state_dict(torch.load(Path(model_weights_path) / 'encoder.pt', map_location=device))
+                )
+                decoder.load_state_dict(
+                    _remove_module_from_state_dict(torch.load(Path(model_weights_path) / 'decoder.pt', map_location=device))
+                )
 
         if use_ddp:
             encoder = DDP(encoder, device_ids=[distributed_context.ddp_local_rank])
