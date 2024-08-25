@@ -333,7 +333,7 @@ def evaluate(
     idx = 0
 
     for batch_idx, data in tqdm(enumerate(data_loader), total=len(data_loader), desc='eval'):
-        input_tensor, target_tensor, _, input_lengths = data
+        input_tensor, target_tensor, _, batch_input_lengths = data
 
         if torch.cuda.is_available():
             input_tensor = input_tensor.to(torch.device(os.environ['DEVICE']))
@@ -347,7 +347,7 @@ def evaluate(
             tokenizer=target_tokenizer,
         )
         for i in range(len(input_tensor)):
-            pred = sequence_generator.generate(input_tensor=input_tensor[i], input_lengths=[input_lengths[i]])
+            pred = sequence_generator.generate(input_tensor=input_tensor[i], input_lengths=[batch_input_lengths[i]])
             if isinstance(sequence_generator, BeamSearchSequenceGenerator):
                 # it returns list of top scoring beams. select best one, and get decoded text
                 pred = pred[0][0]
@@ -364,11 +364,7 @@ def evaluate(
             except ZeroDivisionError:
                 bleu_score = 0
             bleu_scores[idx] = bleu_score
-            specials = [target_tokenizer.processor.pad_id(),
-                        target_tokenizer.processor.bos_id(),
-                        target_tokenizer.processor.eos_id()]
-            input_non_special = [x for x in input_tensor[i] if x not in specials]
-            input_lengths[idx] = len(input_non_special)
+            input_lengths[idx] = batch_input_lengths[i]
             decoded_sentences.append(pred)
             targets.append(target)
             idx += 1
