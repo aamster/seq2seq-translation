@@ -73,8 +73,11 @@ class WMT14(LanguagePairsDataset):
 
     def __getitem__(self, idx):
         if self._split == 'test':
-            source = self._ds['translation'][idx][self._source_lang]
-            target = self._ds['translation'][idx][self._target_lang]
+            ds = iter(self._ds)
+            for _ in range(idx+1):
+                x = next(ds)
+            source = x['translation'][self._source_lang]
+            target = x['translation'][self._target_lang]
         else:
             with open(self._source_path, 'r', encoding='utf-8') as f:
                 f.seek(self._source_index_sampled[idx])
