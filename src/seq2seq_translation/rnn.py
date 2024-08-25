@@ -108,7 +108,7 @@ class DecoderRNN(nn.Module):
         self._pad_idx = pad_idx
         self._eos_token_id = eos_token_id
 
-    def forward(self, encoder_hidden: torch.tensor, encoder_outputs=None, target_tensor=None):
+    def forward(self, encoder_hidden: torch.tensor, encoder_outputs=None, target_tensor=None, softmax_output: bool = True):
         decoder_input, decoder_hidden, decoder_outputs = self.initialize_forward(
             encoder_hidden=encoder_hidden
         )
@@ -127,15 +127,21 @@ class DecoderRNN(nn.Module):
                 target_tensor=target_tensor,
                 t=t
             )
-            outputs.append(decoder_output)
+            if softmax_output:
+                outputs.append(decoder_output)
+            else:
+                outputs.append(decoder_output.topk(k=1, dim=-1)[1].squeeze())
 
             finished_mask |= (decoder_input == self._eos_token_id)
 
             decoder_input = decoder_input.masked_fill(finished_mask, self._eos_token_id)
 
-        decoder_outputs = torch.cat(decoder_outputs, dim=1)
-        decoder_outputs = F.log_softmax(decoder_outputs, dim=-1)
-
+        if softmax_output:
+            decoder_outputs = torch.cat(
+                outputs, dim=1)  # Shape: [batch_size, sequence_length, hidden_size]
+            decoder_outputs = F.log_softmax(decoder_outputs, dim=-1)
+        else:
+            decoder_outputs = torch.stack(outputs).T
         return decoder_outputs, decoder_hidden
 
     def decode_step(
