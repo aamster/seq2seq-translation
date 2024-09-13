@@ -1,4 +1,6 @@
 import abc
+import logging
+import sys
 
 import torch
 import torch.nn.functional as F
@@ -6,6 +8,19 @@ import torch.nn.functional as F
 from seq2seq_translation.rnn import EncoderRNN, DecoderRNN, AttnDecoderRNN
 from seq2seq_translation.tokenization.sentencepiece_tokenizer import SentencePieceTokenizer
 
+
+def get_logger():
+    logging.basicConfig(
+        format="%(message)s",
+        # datefmt="%Y-%m-%d %H:%M:%S",
+        handlers=[logging.StreamHandler(sys.stdout)],
+    )
+    
+    logger = logging.getLogger(__name__)
+    return logger
+
+
+logger = get_logger()
 
 class SequenceGenerator(abc.ABC):
     def __init__(self, encoder: EncoderRNN, decoder: DecoderRNN, tokenizer: SentencePieceTokenizer):
@@ -64,18 +79,20 @@ class BeamSearchSequenceGenerator(SequenceGenerator):
             encoder_hidden=encoder_hidden
         )
 
-        # Initial states of the beam
-        beams = [
-            (initial_decoder_input, decoder_hidden, initial_decoder_input, 0)]
+        beams = [(initial_decoder_input, decoder_hidden, initial_decoder_input, 0)]
+        all_candidates = []
 
-        for _ in range(self.max_length):
-            all_candidates = []
+        for beam_search_iter in range(self.max_length):
+            new_beams = []
+            if all([b[2][:, -1].item() == self._tokenizer.processor.eos_id() for b in beams]):
+                logger.debug('terminating')
+                break
+            logger.debug(f'\nbeam search iter {beam_search_iter}')
+            logger.debug('='*11)
+
             for decoder_input, decoder_hidden, decoded_sequence, score in beams:
-                if decoder_input[:, -1].item() == self._tokenizer.processor.eos_id():
-                    all_candidates.append((decoder_input, decoder_hidden, decoded_sequence, score))
+                if decoded_sequence[:, -1].item() == self._tokenizer.processor.eos_id():
                     continue
-
-                # Predict the next token
                 with torch.no_grad():
                     if isinstance(self._decoder, AttnDecoderRNN):
                         topk_indices, topk_scores, _, _, new_decoder_hidden = self._decoder.decode_step(
@@ -96,20 +113,48 @@ class BeamSearchSequenceGenerator(SequenceGenerator):
                             softmax_scores=True
                         )
 
-                # Create new beams
-                for i in range(self.beam_width):
-                    next_token_id = topk_indices[:, :, i]
+                if torch.any(topk_indices[:, :, :self.beam_width] == self._tokenizer.processor.eos_id()):
+                    new_beam_indices = torch.where(topk_indices[:, :, :self.beam_width] == self._tokenizer.processor.eos_id())[1]
+                else:
+                    new_beam_indices = range(self.beam_width)
+
+                # Create new beams by appending each of the top k tokens
+                for k in new_beam_indices:
+                    next_token_id = topk_indices[:, :, k]
                     new_decoded_sequence = torch.cat([decoded_sequence, next_token_id], dim=1)
-                    new_score = score + torch.log(topk_scores[:, :, i]).item()
-                    all_candidates.append((next_token_id, new_decoder_hidden,  new_decoded_sequence, new_score))
+                    new_score = score + torch.log(topk_scores[:, :, k]).item()
+                    if next_token_id == self._tokenizer.processor.eos_id():
+                        all_candidates.append((next_token_id, new_decoder_hidden, new_decoded_sequence, new_score))
+                    else:
+                        new_beams.append(
+                            (next_token_id, new_decoder_hidden, new_decoded_sequence, new_score))
+            logger.debug('\nNew beams:')
+            for new_beam in new_beams:
+                logger.debug(' '.join([self._tokenizer.decode(new_beam[2]), f'{new_beam[3]:.3f}']))
 
-            # Keep only the top scoring beams
-            beams = sorted(all_candidates, key=lambda x: x[-1], reverse=True)[:self.beam_width]
+            # Sort new beams by score and select top k
+            beams = sorted(new_beams, key=lambda x: x[-1], reverse=True)[:self.beam_width]
 
-        # preds sorted by highest prob
-        preds = sorted(beams, key=lambda x: x[-1])[::-1]
+            logger.debug('\nBeams:')
+            for beam in beams:
+                _, _, decoded_sequence, score = beam
+                logger.debug(' '.join([self._tokenizer.decode(decoded_sequence), f'{score:.3f}']))
 
+            if all_candidates:
+                logger.debug(f'\ncompleted\n\n')
+                for completed in all_candidates:
+                    logger.debug(' '.join([self._tokenizer.decode(completed[2]), f'{completed[3]:.3f}']))
+        # Combine the remaining beams with all_candidates
+        all_candidates.extend(beams)
+
+        # Sort candidates by score and return the best sequences
+        preds = sorted(all_candidates, key=lambda x: x[-1], reverse=True)
         preds = [[self._tokenizer.decode(x[2]), x[3]] for x in preds]
+
+        logger.debug('\nfinal list of preds\n===========\n')
+        for pred in preds:
+            logger.debug(' '.join([pred[0], f'{pred[1]:.3f}']))
+
         return preds
 
 
