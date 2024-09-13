@@ -26,11 +26,13 @@ class WMT14(LanguagePairsDataset):
         self._source_path = Path(out_dir) / f'{self._source_lang}.txt'
         self._target_path = Path(out_dir) / f'{self._target_lang}.txt'
         self._index_path = Path(out_dir) / f'indexes.json'
+        self._streaming = split != 'test'
         super().__init__(out_dir=out_dir, sample_frac=None)
 
     def download(self):
-        self._ds = load_dataset("wmt/wmt14", f"{self._source_lang}-{self._target_lang}", split=self._split,
-                     cache_dir=str(self._out_dir), streaming=True)
+        ds_name = f"{self._source_lang}-{self._target_lang}" if self._target_lang == 'en' else f"{self._target_lang}-{self._source_lang}"
+        self._ds = load_dataset("wmt/wmt14", ds_name, split=self._split,
+                     cache_dir=str(self._out_dir), streaming=self._streaming)
 
     def write_to_single_file(self):
         if self._source_path.exists() and self._target_path.exists():
@@ -73,12 +75,16 @@ class WMT14(LanguagePairsDataset):
 
     def __getitem__(self, idx):
         if self._split == 'test':
-            ds = iter(self._ds)
-            for _ in range(idx+1):
-                x = next(ds)
-            source = x['translation'][self._source_lang]
-            target = x['translation'][self._target_lang]
+            # load it from the huggingface api
+            source = self._ds[int(idx)]['translation'][self._source_lang]
+            target = self._ds[int(idx)]['translation'][self._target_lang]
+
+            if idx == 729:
+                # it contains corrupt text
+                # Replace the misencoded character with the correct EN DASH (U+2013)
+                source = source.replace("\x96", "\u2013")
         else:
+            # load it from on disk (for random access)
             with open(self._source_path, 'r', encoding='utf-8') as f:
                 f.seek(self._source_index_sampled[idx])
                 source = f.readline().strip()
