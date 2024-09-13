@@ -32,7 +32,7 @@ class WMT14(LanguagePairsDataset):
     def download(self):
         ds_name = f"{self._source_lang}-{self._target_lang}" if self._target_lang == 'en' else f"{self._target_lang}-{self._source_lang}"
         self._ds = load_dataset("wmt/wmt14", ds_name, split=self._split,
-                     cache_dir=str(self._out_dir), streaming=self._streaming)
+                     cache_dir=str(self._out_dir), streaming=self._streaming, download_mode="force_redownload")
 
     def write_to_single_file(self):
         if self._source_path.exists() and self._target_path.exists():
