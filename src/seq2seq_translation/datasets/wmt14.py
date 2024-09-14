@@ -32,7 +32,7 @@ class WMT14(LanguagePairsDataset):
     def download(self):
         ds_name = f"{self._source_lang}-{self._target_lang}" if self._target_lang == 'en' else f"{self._target_lang}-{self._source_lang}"
         self._ds = load_dataset("wmt/wmt14", ds_name, split=self._split,
-                     cache_dir=str(self._out_dir), streaming=self._streaming, download_mode="force_redownload")
+                     cache_dir=str(self._out_dir), streaming=self._streaming)
 
     def write_to_single_file(self):
         if self._source_path.exists() and self._target_path.exists():
@@ -68,7 +68,12 @@ class WMT14(LanguagePairsDataset):
         else:
             with open(self._index_path) as f:
                 index = json.load(f)
-            return index['source'], index['target']
+
+            if self._source_lang == 'en':
+                # swapping because en was indexed as source
+                return index['target'], index['source']
+            else:
+                return index['source'], index['target']
 
     def __len__(self):
         return self._ds.info.splits[self._split].num_examples
