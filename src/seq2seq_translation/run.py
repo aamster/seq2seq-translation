@@ -83,6 +83,8 @@ def main(
     if not evaluate_only and n_epochs is None:
         raise ValueError('must provide n_epochs')
 
+    os.environ['USE_DDP'] = str(use_ddp)
+
     if use_ddp:
         distributed_context_manager = DistributedContextManager()
     else:

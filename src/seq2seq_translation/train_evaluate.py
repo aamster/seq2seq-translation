@@ -11,7 +11,7 @@ from typing import Optional, Type
 import torch
 import wandb
 from torch import optim, nn
-from torch.utils.data import DataLoader, DistributedSampler
+from torch.utils.data import DataLoader, DistributedSampler, RandomSampler, SequentialSampler
 import torch.distributed
 from torchmetrics.text import BLEUScore
 from tqdm import tqdm
@@ -24,11 +24,12 @@ from seq2seq_translation.rnn import EncoderRNN, AttnDecoderRNN, DecoderRNN
 
 
 logging.basicConfig(
-    level=logging.INFO,
     format="%(asctime)s - %(levelname)s - %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
     handlers=[logging.StreamHandler(sys.stdout)],
 )
+
+logging.getLogger().setLevel(logging.INFO)
 
 logger = logging.getLogger(__name__)
 
@@ -76,10 +77,10 @@ def _aggregate_metric(local_values):
     :param local_values:
     :return:
     """
-    tensor = torch.tensor([sum(local_values)], device='cuda')
+    tensor = torch.tensor([sum(local_values)], device='cuda' if torch.cuda.is_available() else 'cpu')
     torch.distributed.all_reduce(tensor, op=torch.distributed.ReduceOp.SUM)
     total_sum = tensor.item()
-    total_count = torch.tensor([len(local_values)], device='cuda')
+    total_count = torch.tensor([len(local_values)], device='cuda' if torch.cuda.is_available() else 'cpu')
     torch.distributed.all_reduce(total_count, op=torch.distributed.ReduceOp.SUM)
     avg_value = total_sum / total_count.item()
     return avg_value
@@ -99,8 +100,12 @@ def estimate_performance_metrics(
     encoder.eval()
     decoder.eval()
 
-    train_sampler = DistributedSampler(train_loader.dataset, shuffle=True)
-    val_sampler = DistributedSampler(val_loader.dataset, shuffle=False)
+    if os.environ['USE_DDP'] == 'True':
+        train_sampler = DistributedSampler(train_loader.dataset, shuffle=True)
+        val_sampler = DistributedSampler(val_loader.dataset, shuffle=False)
+    else:
+        train_sampler = RandomSampler(train_loader.dataset)
+        val_sampler = SequentialSampler(val_loader.dataset)
 
     train_data_loader = DataLoader(
         dataset=train_loader.dataset,
@@ -120,17 +125,19 @@ def estimate_performance_metrics(
     for data_loader_name in ('train', 'val'):
         if data_loader_name == 'train':
             data_loader = train_data_loader
-            train_sampler.set_epoch(epoch)  # If you have an epoch variable
+            if isinstance(train_sampler, DistributedSampler):
+                train_sampler.set_epoch(epoch)
         else:
             data_loader = val_data_loader
-            val_sampler.set_epoch(epoch)
+            if isinstance(val_sampler, DistributedSampler):
+                val_sampler.set_epoch(epoch)
 
         data_loader_iter = iter(data_loader)
 
         local_losses = []
         local_bleu_scores = []
 
-        for k in range(eval_iters):
+        for _ in tqdm(range(eval_iters), desc=f'Evaluate performance on {data_loader_name} set', leave=False):
             input_tensor, target_tensor, _, input_lengths = next(data_loader_iter)
 
             if torch.cuda.is_available():
