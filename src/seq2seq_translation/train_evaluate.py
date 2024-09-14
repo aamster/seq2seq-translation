@@ -134,10 +134,10 @@ def estimate_performance_metrics(
 
         data_loader_iter = iter(data_loader)
 
-        local_losses = []
-        local_bleu_scores = []
+        local_losses = torch.zeros(eval_iters)
+        local_bleu_scores = torch.zeros(eval_iters)
 
-        for _ in tqdm(range(eval_iters), desc=f'Evaluate performance on {data_loader_name} set', leave=False):
+        for eval_iter in tqdm(range(eval_iters), desc=f'Evaluate performance on {data_loader_name} set', leave=False):
             input_tensor, target_tensor, _, input_lengths = next(data_loader_iter)
 
             if torch.cuda.is_available():
@@ -150,15 +150,22 @@ def estimate_performance_metrics(
 
             if data_loader_name == 'train':
                 loss = _compute_loss(decoder_outputs, target_tensor, criterion, train_loader)
-                local_losses.append(loss.item())
+                local_losses[eval_iter] = loss
 
             bleu_score = _compute_bleu_score(decoded_ids, target_tensor, data_loader.dataset)
-            local_bleu_scores.append(bleu_score)
+            local_bleu_scores[eval_iter] = bleu_score
 
         # Aggregate metrics across processes
-        avg_bleu = _aggregate_metric(local_bleu_scores)
+        if os.environ['USE_DDP'] == 'True':
+            avg_bleu = _aggregate_metric(local_bleu_scores)
+        else:
+            avg_bleu = local_bleu_scores.mean()
+
         if data_loader_name == 'train':
-            avg_loss = _aggregate_metric(local_losses)
+            if os.environ['USE_DDP'] == 'True':
+                avg_loss = _aggregate_metric(local_losses)
+            else:
+                avg_loss = local_losses.mean()
             out[data_loader_name] = {
                 'loss': avg_loss,
                 'bleu_score': avg_bleu
