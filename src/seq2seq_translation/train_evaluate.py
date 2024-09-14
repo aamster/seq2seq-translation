@@ -1,3 +1,6 @@
+import logging
+import sys
+
 import math
 import os
 import time
@@ -9,13 +12,25 @@ import torch
 import wandb
 from torch import optim, nn
 from torch.utils.data import DataLoader, DistributedSampler
+import torch.distributed
 from torchmetrics.text import BLEUScore
 from tqdm import tqdm
 import evaluate as huggingface_evaluate
 
 from seq2seq_translation.inference import SequenceGenerator, BeamSearchSequenceGenerator
+from seq2seq_translation.sentence_pairs_dataset import SentencePairsDataset
 from seq2seq_translation.tokenization.sentencepiece_tokenizer import SentencePieceTokenizer
 from seq2seq_translation.rnn import EncoderRNN, AttnDecoderRNN, DecoderRNN
+
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+    handlers=[logging.StreamHandler(sys.stdout)],
+)
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -26,6 +41,50 @@ class LearningRateDecayConfig:
     min_lr: float = 5e-5 # should be ~= learning_rate/10 per Chinchilla
 
 
+def _compute_loss(decoder_outputs: torch.tensor, target_tensor: torch.tensor, criterion: torch.nn.NLLLoss, loader: DataLoader):
+    batch_size = target_tensor.shape[0]
+    C = decoder_outputs.shape[-1]
+    T = target_tensor.shape[-1]
+
+    # Pad decoder_outputs if necessary
+    decoder_outputs = torch.nn.functional.pad(
+        decoder_outputs, (0, 0, 0, max(0, target_tensor.shape[1] - decoder_outputs.shape[1])),
+        value=loader.dataset.target_tokenizer.processor.pad_id()
+    )
+
+    loss = criterion(
+        decoder_outputs.reshape(batch_size * T, C),
+        target_tensor.view(batch_size * T)
+    )
+    return loss
+
+
+def _compute_bleu_score(decoded_ids: torch.tensor, target_tensor: torch.tensor, dataset: SentencePairsDataset, smooth: bool = False):
+    bleu_metric = BLEUScore(smooth=smooth)
+    decoded_texts = dataset.target_tokenizer.decode(decoded_ids)
+    target_texts = dataset.target_tokenizer.decode(target_tensor)
+    target_texts = [[t] for t in target_texts]  # Wrap in list for single reference
+
+    bleu_score = bleu_metric(decoded_texts, target_texts)
+    return bleu_score.item()
+
+
+def _aggregate_metric(local_values):
+    """
+    Aggregates metric across models on different devices
+
+    :param local_values:
+    :return:
+    """
+    tensor = torch.tensor([sum(local_values)], device='cuda')
+    torch.distributed.all_reduce(tensor, op=torch.distributed.ReduceOp.SUM)
+    total_sum = tensor.item()
+    total_count = torch.tensor([len(local_values)], device='cuda')
+    torch.distributed.all_reduce(total_count, op=torch.distributed.ReduceOp.SUM)
+    avg_value = total_sum / total_count.item()
+    return avg_value
+
+
 @torch.no_grad()
 def estimate_performance_metrics(
     train_loader: DataLoader,
@@ -33,21 +92,26 @@ def estimate_performance_metrics(
     criterion,
     encoder: EncoderRNN,
     decoder: DecoderRNN | AttnDecoderRNN,
+    epoch: int,
     eval_iters: int = 200
 ):
     out = {'train': {}, 'val': {}}
     encoder.eval()
     decoder.eval()
+
+    train_sampler = DistributedSampler(train_loader.dataset, shuffle=True)
+    val_sampler = DistributedSampler(val_loader.dataset, shuffle=False)
+
     train_data_loader = DataLoader(
         dataset=train_loader.dataset,
-        shuffle=True,
         batch_size=train_loader.batch_size,
+        sampler=train_sampler,
         collate_fn=train_loader.collate_fn
     )
     val_data_loader = DataLoader(
         dataset=val_loader.dataset,
-        shuffle=True,
         batch_size=val_loader.batch_size,
+        sampler=val_sampler,
         collate_fn=val_loader.collate_fn
     )
 
@@ -56,75 +120,60 @@ def estimate_performance_metrics(
     for data_loader_name in ('train', 'val'):
         if data_loader_name == 'train':
             data_loader = train_data_loader
+            train_sampler.set_epoch(epoch)  # If you have an epoch variable
         else:
             data_loader = val_data_loader
+            val_sampler.set_epoch(epoch)
+
         data_loader_iter = iter(data_loader)
 
-        if data_loader_name == 'train':
-            losses = torch.zeros(eval_iters)
-        else:
-            losses = None
-        blue_scores = torch.zeros(eval_iters)
+        local_losses = []
+        local_bleu_scores = []
 
-        for k in tqdm(range(eval_iters), desc=f'Evaluate performance on {data_loader_name} set', leave=False):
+        for k in range(eval_iters):
             input_tensor, target_tensor, _, input_lengths = next(data_loader_iter)
+
             if torch.cuda.is_available():
                 input_tensor = input_tensor.to(torch.device(os.environ['DEVICE']))
                 target_tensor = target_tensor.to(torch.device(os.environ['DEVICE']))
 
-            if data_loader_name == 'train':
-                decoder_outputs, _, _, decoded_ids = inference(
-                    encoder=encoder, decoder=decoder, input_tensor=input_tensor, target_tensor=target_tensor, input_lengths=input_lengths)
-            else:
-                decoder_outputs, _, _, decoded_ids = inference(
-                    encoder=encoder, decoder=decoder, input_tensor=input_tensor, input_lengths=input_lengths, decoder_softmax_output=False)
-
-            if data_loader_name == 'train':
-                batch_size = target_tensor.shape[0]
-                C = decoder_outputs.shape[-1]
-                T = target_tensor.shape[-1]
-
-                # if decoder_outputs shorter than target_tensor, pad it so that shapes match
-                decoder_outputs = torch.nn.functional.pad(
-                    decoder_outputs, (0, 0, 0, max(0, target_tensor.shape[1] - decoder_outputs.shape[1])),
-                    value=train_loader.dataset.target_tokenizer.processor.pad_id())
-
-                loss = criterion(
-                    decoder_outputs.reshape(batch_size * T, C),
-                    target_tensor.view(batch_size * T)
-                )
-                losses[k] = loss.item()
-
-            bleu_score = BLEUScore()
-            blue_scores[k] = bleu_score(
-                data_loader.dataset.target_tokenizer.decode(decoded_ids),
-                # wrapping each decoded string in a list since we have a single translation reference
-                # per example
-                [[x] for x in data_loader.dataset.target_tokenizer.decode(target_tensor)],
+            decoder_outputs, _, _, decoded_ids = inference(
+                encoder=encoder, decoder=decoder, input_tensor=input_tensor, target_tensor=target_tensor if data_loader_name == 'train' else None, input_lengths=input_lengths
             )
 
+            if data_loader_name == 'train':
+                loss = _compute_loss(decoder_outputs, target_tensor, criterion, train_loader)
+                local_losses.append(loss.item())
+
+            bleu_score = _compute_bleu_score(decoded_ids, target_tensor, data_loader.dataset)
+            local_bleu_scores.append(bleu_score)
+
+        # Aggregate metrics across processes
+        avg_bleu = _aggregate_metric(local_bleu_scores)
         if data_loader_name == 'train':
+            avg_loss = _aggregate_metric(local_losses)
             out[data_loader_name] = {
-                'loss': losses.mean(),
-                'bleu_score': blue_scores.mean()
+                'loss': avg_loss,
+                'bleu_score': avg_bleu
             }
         else:
             out[data_loader_name] = {
-                'bleu_score': blue_scores.mean()
+                'bleu_score': avg_bleu
             }
-            decoded_input, predicted_target, decoded_target, dataset_name = get_pred(
-                encoder=encoder,
-                decoder=decoder,
-                data_loader=data_loader,
-                source_tokenizer=data_loader.dataset.source_tokenizer,
-                target_tokenizer=data_loader.dataset.target_tokenizer,
-                idx=torch.randint(low=0, high=len(data_loader.dataset), size=(1,))[0].item()
+            if os.environ['MASTER_PROCESS'] == 'True':
+                decoded_input, predicted_target, decoded_target, dataset_name = get_pred(
+                    encoder=encoder,
+                    decoder=decoder,
+                    data_loader=data_loader,
+                    source_tokenizer=data_loader.dataset.source_tokenizer,
+                    target_tokenizer=data_loader.dataset.target_tokenizer,
+                    idx=torch.randint(low=0, high=len(data_loader.dataset), size=(1,))[0].item()
 
-            )
-            print('dataset:', dataset_name)
-            print('input:', decoded_input)
-            print('target:', decoded_target)
-            print('pred:', predicted_target)
+                )
+                print('dataset:', dataset_name)
+                print('input:', decoded_input)
+                print('target:', decoded_target)
+                print('pred:', predicted_target)
 
     encoder.train()
     decoder.train()
@@ -173,7 +222,9 @@ def train_epoch(
         else:
             lr = encoder_optimizer.lr
 
-        if global_iter_num % eval_interval == 0 and os.environ['MASTER_PROCESS'] == 'True':
+        if global_iter_num % eval_interval == 0:
+            if os.environ['MASTER_PROCESS'] == 'True':
+                logger.info('Calculating performance metrics')
             metrics = estimate_performance_metrics(
                 train_loader=train_data_loader,
                 val_loader=val_data_loader,
@@ -181,24 +232,27 @@ def train_epoch(
                 encoder=encoder,
                 decoder=decoder,
                 eval_iters=eval_iters,
+                epoch=epoch
             )
-            print(
-                f"step {global_iter_num}: train loss {metrics['train']['loss']:.4f}, "
-                f"train bleu {metrics['train']['bleu_score']:.4f}, "
-                f"val bleu {metrics['val']['bleu_score']:.4f}")
-            if os.environ.get('USE_WANDB') == 'True':
-                wandb.log({
-                    "iter": global_iter_num,
-                    "lr": lr,
-                    'train_nllloss': metrics['train']['loss'],
-                    'train_bleu_score': metrics['train']['bleu_score'],
-                    'val_bleu_score': metrics['val']['bleu_score']
-                })
 
-            if metrics['val']['bleu_score'] > best_bleu_score:
-                best_bleu_score = metrics['val']['bleu_score']
-                torch.save(encoder.state_dict(), Path(model_weights_out_dir) / 'encoder.pt')
-                torch.save(decoder.state_dict(), Path(model_weights_out_dir) / 'decoder.pt')
+            if os.environ['MASTER_PROCESS'] == 'True':
+                print(
+                    f"step {global_iter_num}: train loss {metrics['train']['loss']:.4f}, "
+                    f"train bleu {metrics['train']['bleu_score']:.4f}, "
+                    f"val bleu {metrics['val']['bleu_score']:.4f}")
+                if os.environ.get('USE_WANDB') == 'True':
+                    wandb.log({
+                        "iter": global_iter_num,
+                        "lr": lr,
+                        'train_nllloss': metrics['train']['loss'],
+                        'train_bleu_score': metrics['train']['bleu_score'],
+                        'val_bleu_score': metrics['val']['bleu_score']
+                    })
+
+                if metrics['val']['bleu_score'] > best_bleu_score:
+                    best_bleu_score = metrics['val']['bleu_score']
+                    torch.save(encoder.state_dict(), Path(model_weights_out_dir) / 'encoder.pt')
+                    torch.save(decoder.state_dict(), Path(model_weights_out_dir) / 'decoder.pt')
 
         encoder_optimizer.zero_grad()
         decoder_optimizer.zero_grad()
