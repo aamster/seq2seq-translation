@@ -287,13 +287,17 @@ def main(
 
             print(f"Process {torch.distributed.get_rank()} is using device: {device}")
 
-            if torch.distributed.is_initialized():
-                torch.distributed.barrier()
+            try:
+                if torch.distributed.is_initialized():
+                    torch.distributed.barrier()
 
-            print(f'CUDA_VISIBLE_DEVICES: {os.environ["CUDA_VISIBLE_DEVICES"]}')
-            
-            encoder = DDP(encoder, device_ids=[distributed_context.ddp_local_rank])
-            decoder = DDP(decoder, device_ids=[distributed_context.ddp_local_rank])
+                print(f'CUDA_VISIBLE_DEVICES: {os.environ["CUDA_VISIBLE_DEVICES"]}')
+
+                encoder = DDP(encoder, device_ids=[distributed_context.ddp_local_rank])
+                decoder = DDP(decoder, device_ids=[distributed_context.ddp_local_rank])
+            except Exception as e:
+                print(f"Error in process {torch.distributed.get_rank()}: {e}")
+                sys.stdout.flush()
 
         if compile:
             # requires PyTorch 2.0
