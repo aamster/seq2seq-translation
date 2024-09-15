@@ -185,6 +185,7 @@ def main(
 
         collate_fn = CollateFunction(pad_token_id=source_tokenizer.processor.pad_id())
 
+        print(f'process {distributed_context.rank} creating data loaders')
         train_sampler = DistributedSampler(train_dset) if use_ddp else None
         train_data_loader = DataLoader(
             dataset=train_dset,
@@ -214,6 +215,7 @@ def main(
 
         device = torch.device(device)
 
+        print(f'process {distributed_context.rank} create models')
         encoder = EncoderRNN(
             input_size=source_tokenizer.processor.vocab_size(),
             hidden_size=encoder_hidden_dim,
@@ -302,7 +304,7 @@ def main(
                  })
             df.to_csv(eval_out_path, index=False)
         else:
-            logger.info(f'Process {distributed_context.rank} Staring train')
+            print(f'Process {distributed_context.rank} Staring train')
             train(
                 train_dataloader=train_data_loader,
                 val_dataloader=val_data_loader,
