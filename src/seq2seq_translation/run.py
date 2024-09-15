@@ -293,7 +293,9 @@ def main(
 
                 print(f'CUDA_VISIBLE_DEVICES: {os.environ["CUDA_VISIBLE_DEVICES"]}')
 
+                print(f'process {torch.distributed.get_rank()} wrap encoder DDP')
                 encoder = DDP(encoder, device_ids=[distributed_context.ddp_local_rank])
+                print(f'process {torch.distributed.get_rank()} wrap decoder DDP')
                 decoder = DDP(decoder, device_ids=[distributed_context.ddp_local_rank])
             except Exception as e:
                 print(f"Error in process {torch.distributed.get_rank()}: {e}")
