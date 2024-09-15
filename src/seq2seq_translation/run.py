@@ -291,6 +291,7 @@ def main(
                 if torch.distributed.is_initialized():
                     print(f"Process {torch.distributed.get_rank()} waiting at barrier")
                     sys.stdout.flush()
+                    torch.cuda.synchronize()
                     torch.distributed.barrier()
                     print(f"Process {torch.distributed.get_rank()} passed barrier")
                     sys.stdout.flush()
