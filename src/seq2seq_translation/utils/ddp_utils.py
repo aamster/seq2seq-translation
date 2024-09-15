@@ -64,4 +64,4 @@ class SingleProcessContextManager:
 
 
 def is_master_process():
-    return torch.distributed.get_rank() if torch.distributed.is_initialized() else 0
+    return (torch.distributed.get_rank() if torch.distributed.is_initialized() else 0) == 0
