@@ -279,6 +279,19 @@ def main(
 
         if use_ddp:
             print(f'ddp local rank {distributed_context.ddp_local_rank}')
+            if torch.distributed.is_initialized():
+                print(
+                    f"Rank: {torch.distributed.get_rank()}, World Size: {torch.distributed.get_world_size()}")
+            else:
+                print("Distributed process group not initialized.")
+
+            print(f"Process {torch.distributed.get_rank()} is using device: {device}")
+
+            if torch.distributed.is_initialized():
+                torch.distributed.barrier()
+
+            print(f'CUDA_VISIBLE_DEVICES: {os.environ["CUDA_VISIBLE_DEVICES"]}')
+            
             encoder = DDP(encoder, device_ids=[distributed_context.ddp_local_rank])
             decoder = DDP(decoder, device_ids=[distributed_context.ddp_local_rank])
 
@@ -288,18 +301,6 @@ def main(
             encoder = torch.compile(encoder)
             decoder = torch.compile(decoder)
 
-        if torch.distributed.is_initialized():
-            print(
-                f"Rank: {torch.distributed.get_rank()}, World Size: {torch.distributed.get_world_size()}")
-        else:
-            print("Distributed process group not initialized.")
-
-        print(f"Process {torch.distributed.get_rank()} is using device: {device}")
-
-        if torch.distributed.is_initialized():
-            torch.distributed.barrier()
-
-        print(f'CUDA_VISIBLE_DEVICES: {os.environ["CUDA_VISIBLE_DEVICES"]}')
         if evaluate_only:
             val_decoded_text, val_targets, val_bleu, val_bleus, input_lengths = evaluate(
                 encoder=encoder,
