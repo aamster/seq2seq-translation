@@ -278,6 +278,7 @@ def main(
                 )
 
         if use_ddp:
+            print(f'ddp local rank {distributed_context.ddp_local_rank}')
             encoder = DDP(encoder, device_ids=[distributed_context.ddp_local_rank])
             decoder = DDP(decoder, device_ids=[distributed_context.ddp_local_rank])
 
