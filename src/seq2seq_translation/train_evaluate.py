@@ -70,18 +70,19 @@ def _compute_bleu_score(decoded_ids: torch.tensor, target_tensor: torch.tensor, 
     return bleu_score.item()
 
 
-def _aggregate_metric(local_values):
+def _aggregate_metric(local_values: torch.tensor):
     """
     Aggregates metric across models on different devices
 
     :param local_values:
     :return:
     """
-    tensor = torch.tensor([sum(local_values)], device='cuda' if torch.cuda.is_available() else 'cpu')
-    torch.distributed.all_reduce(tensor, op=torch.distributed.ReduceOp.SUM)
-    total_sum = tensor.item()
-    total_count = torch.tensor([len(local_values)], device='cuda' if torch.cuda.is_available() else 'cpu')
-    torch.distributed.all_reduce(total_count, op=torch.distributed.ReduceOp.SUM)
+    total_sum = torch.tensor([sum(local_values)], device=local_values.device)
+    total_count = torch.tensor([len(local_values)], device=local_values.device)
+
+    if torch.distributed.is_initialized():
+        torch.distributed.all_reduce(total_sum, op=torch.distributed.ReduceOp.SUM)
+        torch.distributed.all_reduce(total_count, op=torch.distributed.ReduceOp.SUM)
     avg_value = total_sum / total_count.item()
     return avg_value
 
@@ -96,13 +97,14 @@ def estimate_performance_metrics(
     epoch: int,
     eval_iters: int = 200
 ):
+
     out = {'train': {}, 'val': {}}
     encoder.eval()
     decoder.eval()
 
-    if os.environ['USE_DDP'] == 'True':
-        train_sampler = DistributedSampler(train_loader.dataset, shuffle=True)
-        val_sampler = DistributedSampler(val_loader.dataset, shuffle=False)
+    if torch.distributed.is_initialized():
+        train_sampler = DistributedSampler(train_loader.dataset, shuffle=True, drop_last=True)
+        val_sampler = DistributedSampler(val_loader.dataset, shuffle=False, drop_last=True)
     else:
         train_sampler = RandomSampler(train_loader.dataset)
         val_sampler = SequentialSampler(val_loader.dataset)
@@ -123,6 +125,8 @@ def estimate_performance_metrics(
     eval_iters = min(eval_iters, len(train_data_loader), len(val_data_loader))
 
     for data_loader_name in ('train', 'val'):
+        print(f"Process {torch.distributed.get_rank()}: Starting evaluation on {data_loader_name}")
+
         if data_loader_name == 'train':
             data_loader = train_data_loader
             if isinstance(train_sampler, DistributedSampler):
@@ -134,10 +138,18 @@ def estimate_performance_metrics(
 
         data_loader_iter = iter(data_loader)
 
-        local_losses = torch.zeros(eval_iters)
-        local_bleu_scores = torch.zeros(eval_iters)
+        local_losses = torch.zeros(eval_iters, device=encoder.device)
+        local_bleu_scores = torch.zeros(eval_iters, device=encoder.device)
 
-        for eval_iter in tqdm(range(eval_iters), desc=f'Evaluate performance on {data_loader_name} set', leave=False):
+        if torch.distributed.get_rank() if torch.distributed.is_initialized() else 0 == 0:
+            iterator = tqdm(range(eval_iters), desc=f'Evaluate performance on {data_loader_name} set', leave=False)
+        else:
+            iterator = range(eval_iters)
+
+        for eval_iter in iterator:
+            print(
+                f"Process {torch.distributed.get_rank()}: Before inference at iteration {eval_iter}")
+
             input_tensor, target_tensor, _, input_lengths = next(data_loader_iter)
 
             if torch.cuda.is_available():
@@ -148,6 +160,8 @@ def estimate_performance_metrics(
                 encoder=encoder, decoder=decoder, input_tensor=input_tensor, target_tensor=target_tensor if data_loader_name == 'train' else None, input_lengths=input_lengths
             )
 
+            print(f"Process {torch.distributed.get_rank()}: After inference at iteration {eval_iter}")
+
             if data_loader_name == 'train':
                 loss = _compute_loss(decoder_outputs, target_tensor, criterion, train_loader)
                 local_losses[eval_iter] = loss
@@ -156,13 +170,18 @@ def estimate_performance_metrics(
             local_bleu_scores[eval_iter] = bleu_score
 
         # Aggregate metrics across processes
-        if os.environ['USE_DDP'] == 'True':
+        if torch.distributed.is_initialized():
+            print(
+                f"Process {torch.distributed.get_rank()}: Before bleu agg on {data_loader_name}")
+
             avg_bleu = _aggregate_metric(local_bleu_scores)
         else:
             avg_bleu = local_bleu_scores.mean()
 
         if data_loader_name == 'train':
-            if os.environ['USE_DDP'] == 'True':
+            if torch.distributed.is_initialized():
+                print(
+                    f"Process {torch.distributed.get_rank()}: Before loss agg on {data_loader_name}")
                 avg_loss = _aggregate_metric(local_losses)
             else:
                 avg_loss = local_losses.mean()
@@ -174,7 +193,9 @@ def estimate_performance_metrics(
             out[data_loader_name] = {
                 'bleu_score': avg_bleu
             }
-            if os.environ['MASTER_PROCESS'] == 'True':
+            print(
+                f"Process {torch.distributed.get_rank()}: Before pred on {data_loader_name}")
+            if torch.distributed.get_rank() if torch.distributed.is_available() else 0 == 0:
                 decoded_input, predicted_target, decoded_target, dataset_name = get_pred(
                     encoder=encoder,
                     decoder=decoder,
@@ -237,7 +258,7 @@ def train_epoch(
             lr = encoder_optimizer.lr
 
         if global_iter_num % eval_interval == 0:
-            if os.environ['MASTER_PROCESS'] == 'True':
+            if torch.distributed.get_rank() if torch.distributed.is_available() else 0 == 0:
                 logger.info('Calculating performance metrics')
             metrics = estimate_performance_metrics(
                 train_loader=train_data_loader,
@@ -249,7 +270,7 @@ def train_epoch(
                 epoch=epoch
             )
 
-            if os.environ['MASTER_PROCESS'] == 'True':
+            if torch.distributed.get_rank() if torch.distributed.is_available() else 0 == 0:
                 print(
                     f"step {global_iter_num}: train loss {metrics['train']['loss']:.4f}, "
                     f"train bleu {metrics['train']['bleu_score']:.4f}, "
@@ -312,20 +333,6 @@ def train_epoch(
         total_loss += loss.item()
 
     return total_loss / len(train_data_loader), best_bleu_score
-
-
-def asMinutes(s):
-    m = math.floor(s / 60)
-    s -= m * 60
-    return '%dm %ds' % (m, s)
-
-
-def timeSince(since, percent):
-    now = time.time()
-    s = now - since
-    es = s / (percent)
-    rs = es - s
-    return '%s (- %s)' % (asMinutes(s), asMinutes(rs))
 
 
 def get_pred(
