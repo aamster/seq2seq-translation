@@ -83,7 +83,7 @@ def _aggregate_metric(local_values: torch.tensor):
     if torch.distributed.is_initialized():
         torch.distributed.all_reduce(total_sum, op=torch.distributed.ReduceOp.SUM)
         torch.distributed.all_reduce(total_count, op=torch.distributed.ReduceOp.SUM)
-    avg_value = total_sum / total_count.item()
+    avg_value = total_sum.item() / total_count.item()
     return avg_value
 
 
@@ -97,7 +97,6 @@ def estimate_performance_metrics(
     epoch: int,
     eval_iters: int = 200
 ):
-
     out = {'train': {}, 'val': {}}
     encoder.eval()
     decoder.eval()
@@ -125,8 +124,6 @@ def estimate_performance_metrics(
     eval_iters = min(eval_iters, len(train_data_loader), len(val_data_loader))
 
     for data_loader_name in ('train', 'val'):
-        print(f"Process {torch.distributed.get_rank()}: Starting evaluation on {data_loader_name}")
-
         if data_loader_name == 'train':
             data_loader = train_data_loader
             if isinstance(train_sampler, DistributedSampler):
@@ -147,9 +144,6 @@ def estimate_performance_metrics(
             iterator = range(eval_iters)
 
         for eval_iter in iterator:
-            print(
-                f"Process {torch.distributed.get_rank()}: Before inference at iteration {eval_iter}")
-
             input_tensor, target_tensor, _, input_lengths = next(data_loader_iter)
 
             if torch.cuda.is_available():
@@ -160,8 +154,6 @@ def estimate_performance_metrics(
                 encoder=encoder, decoder=decoder, input_tensor=input_tensor, target_tensor=target_tensor if data_loader_name == 'train' else None, input_lengths=input_lengths
             )
 
-            print(f"Process {torch.distributed.get_rank()}: After inference at iteration {eval_iter}")
-
             if data_loader_name == 'train':
                 loss = _compute_loss(decoder_outputs, target_tensor, criterion, train_loader)
                 local_losses[eval_iter] = loss
@@ -171,17 +163,12 @@ def estimate_performance_metrics(
 
         # Aggregate metrics across processes
         if torch.distributed.is_initialized():
-            print(
-                f"Process {torch.distributed.get_rank()}: Before bleu agg on {data_loader_name}")
-
             avg_bleu = _aggregate_metric(local_bleu_scores)
         else:
             avg_bleu = local_bleu_scores.mean()
 
         if data_loader_name == 'train':
             if torch.distributed.is_initialized():
-                print(
-                    f"Process {torch.distributed.get_rank()}: Before loss agg on {data_loader_name}")
                 avg_loss = _aggregate_metric(local_losses)
             else:
                 avg_loss = local_losses.mean()
@@ -193,8 +180,6 @@ def estimate_performance_metrics(
             out[data_loader_name] = {
                 'bleu_score': avg_bleu
             }
-            print(
-                f"Process {torch.distributed.get_rank()}: Before pred on {data_loader_name}")
             if torch.distributed.get_rank() if torch.distributed.is_available() else 0 == 0:
                 decoded_input, predicted_target, decoded_target, dataset_name = get_pred(
                     encoder=encoder,
