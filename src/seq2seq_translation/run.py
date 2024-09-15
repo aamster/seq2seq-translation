@@ -1,5 +1,7 @@
 import inspect
+import logging
 import os
+import sys
 from argparse import ArgumentParser
 from collections import OrderedDict
 from pathlib import Path
@@ -25,6 +27,17 @@ from seq2seq_translation.utils.ddp_utils import DistributedContextManager, \
 from torch.nn.parallel import DistributedDataParallel as DDP
 
 
+logging.basicConfig(
+    format="%(asctime)s - %(levelname)s - %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+    handlers=[logging.StreamHandler(sys.stdout)],
+)
+
+logging.getLogger().setLevel(logging.INFO)
+
+logger = logging.getLogger(__name__)
+
+
 def _remove_module_from_state_dict(state_dict: dict):
     """
     fixing an issue. when training with ddp should have saved model.module.state_dict() instead of model.state_dict()
@@ -38,6 +51,7 @@ def _remove_module_from_state_dict(state_dict: dict):
         name = k.replace('module.', '')  # remove `module.` prefix
         new_state_dict[name] = v
     return new_state_dict
+
 
 @record
 def main(
@@ -83,16 +97,12 @@ def main(
     if not evaluate_only and n_epochs is None:
         raise ValueError('must provide n_epochs')
 
-    os.environ['USE_DDP'] = str(use_ddp)
-
     if use_ddp:
         distributed_context_manager = DistributedContextManager()
     else:
         distributed_context_manager = SingleProcessContextManager()
 
     with distributed_context_manager as distributed_context:
-        os.environ['MASTER_PROCESS'] = str(distributed_context.is_master_process)
-
         if os.environ.get('USE_WANDB') == 'True' and distributed_context.is_master_process:
             wandb.login()
 
@@ -292,6 +302,7 @@ def main(
                  })
             df.to_csv(eval_out_path, index=False)
         else:
+            logger.info(f'Process {distributed_context.rank} Staring train')
             train(
                 train_dataloader=train_data_loader,
                 val_dataloader=val_data_loader,

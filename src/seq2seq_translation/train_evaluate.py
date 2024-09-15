@@ -21,7 +21,7 @@ from seq2seq_translation.inference import SequenceGenerator, BeamSearchSequenceG
 from seq2seq_translation.sentence_pairs_dataset import SentencePairsDataset
 from seq2seq_translation.tokenization.sentencepiece_tokenizer import SentencePieceTokenizer
 from seq2seq_translation.rnn import EncoderRNN, AttnDecoderRNN, DecoderRNN
-
+from seq2seq_translation.utils.ddp_utils import is_master_process
 
 logging.basicConfig(
     format="%(asctime)s - %(levelname)s - %(message)s",
@@ -138,7 +138,7 @@ def estimate_performance_metrics(
         local_losses = torch.zeros(eval_iters, device=encoder.device)
         local_bleu_scores = torch.zeros(eval_iters, device=encoder.device)
 
-        if torch.distributed.get_rank() if torch.distributed.is_initialized() else 0 == 0:
+        if is_master_process():
             iterator = tqdm(range(eval_iters), desc=f'Evaluate performance on {data_loader_name} set', leave=False)
         else:
             iterator = range(eval_iters)
@@ -180,7 +180,7 @@ def estimate_performance_metrics(
             out[data_loader_name] = {
                 'bleu_score': avg_bleu
             }
-            if torch.distributed.get_rank() if torch.distributed.is_available() else 0 == 0:
+            if is_master_process():
                 decoded_input, predicted_target, decoded_target, dataset_name = get_pred(
                     encoder=encoder,
                     decoder=decoder,
@@ -243,7 +243,7 @@ def train_epoch(
             lr = encoder_optimizer.lr
 
         if global_iter_num % eval_interval == 0:
-            if torch.distributed.get_rank() if torch.distributed.is_available() else 0 == 0:
+            if is_master_process():
                 logger.info('Calculating performance metrics')
             metrics = estimate_performance_metrics(
                 train_loader=train_data_loader,
@@ -255,7 +255,7 @@ def train_epoch(
                 epoch=epoch
             )
 
-            if torch.distributed.get_rank() if torch.distributed.is_available() else 0 == 0:
+            if is_master_process():
                 print(
                     f"step {global_iter_num}: train loss {metrics['train']['loss']:.4f}, "
                     f"train bleu {metrics['train']['bleu_score']:.4f}, "

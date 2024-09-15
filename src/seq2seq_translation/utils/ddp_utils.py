@@ -1,6 +1,7 @@
 import os
 from datetime import timedelta
 
+import torch
 from torch.distributed import init_process_group, destroy_process_group
 
 
@@ -30,6 +31,10 @@ class DistributedContextManager:
     def ddp_local_rank(self):
         return self._ddp_local_rank
 
+    @property
+    def rank(self):
+        return self._ddp_rank
+
     def __exit__(self, exc_type, exc_val, exc_tb):
         destroy_process_group()
 
@@ -52,3 +57,11 @@ class SingleProcessContextManager:
     @property
     def ddp_local_rank(self):
         raise NotImplementedError
+
+    @property
+    def rank(self):
+        return 'main'
+
+
+def is_master_process():
+    return torch.distributed.get_rank() if torch.distributed.is_initialized() else 0
