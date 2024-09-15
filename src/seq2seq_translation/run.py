@@ -185,7 +185,6 @@ def main(
 
         collate_fn = CollateFunction(pad_token_id=source_tokenizer.processor.pad_id())
 
-        print(f'process {distributed_context.rank} creating data loaders')
         train_sampler = DistributedSampler(train_dset) if use_ddp else None
         train_data_loader = DataLoader(
             dataset=train_dset,
@@ -215,7 +214,6 @@ def main(
 
         device = torch.device(device)
 
-        print(f'process {distributed_context.rank} create models')
         encoder = EncoderRNN(
             input_size=source_tokenizer.processor.vocab_size(),
             hidden_size=encoder_hidden_dim,
@@ -278,33 +276,8 @@ def main(
                 )
 
         if use_ddp:
-            print(f'ddp local rank {distributed_context.ddp_local_rank}')
-            if torch.distributed.is_initialized():
-                print(
-                    f"Rank: {torch.distributed.get_rank()}, World Size: {torch.distributed.get_world_size()}")
-            else:
-                print("Distributed process group not initialized.")
-
-            print(f"Process {torch.distributed.get_rank()} is using device: {device}")
-
-            try:
-                if torch.distributed.is_initialized():
-                    print(f"Process {torch.distributed.get_rank()} waiting at barrier")
-                    sys.stdout.flush()
-                    torch.cuda.synchronize()
-                    torch.distributed.barrier()
-                    print(f"Process {torch.distributed.get_rank()} passed barrier")
-                    sys.stdout.flush()
-
-                print(f'CUDA_VISIBLE_DEVICES: {os.environ["CUDA_VISIBLE_DEVICES"]}')
-
-                print(f'process {torch.distributed.get_rank()} wrap encoder DDP')
-                encoder = DDP(encoder, device_ids=[distributed_context.ddp_local_rank])
-                print(f'process {torch.distributed.get_rank()} wrap decoder DDP')
-                decoder = DDP(decoder, device_ids=[distributed_context.ddp_local_rank])
-            except Exception as e:
-                print(f"Error in process {torch.distributed.get_rank()}: {e}")
-                sys.stdout.flush()
+            encoder = DDP(encoder, device_ids=[distributed_context.ddp_local_rank])
+            decoder = DDP(decoder, device_ids=[distributed_context.ddp_local_rank])
 
         if compile:
             # requires PyTorch 2.0
@@ -329,7 +302,6 @@ def main(
                  })
             df.to_csv(eval_out_path, index=False)
         else:
-            print(f'Process {distributed_context.rank} Staring train')
             train(
                 train_dataloader=train_data_loader,
                 val_dataloader=val_data_loader,
