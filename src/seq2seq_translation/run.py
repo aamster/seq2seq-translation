@@ -289,7 +289,11 @@ def main(
 
             try:
                 if torch.distributed.is_initialized():
+                    print(f"Process {torch.distributed.get_rank()} waiting at barrier")
+                    sys.stdout.flush()
                     torch.distributed.barrier()
+                    print(f"Process {torch.distributed.get_rank()} passed barrier")
+                    sys.stdout.flush()
 
                 print(f'CUDA_VISIBLE_DEVICES: {os.environ["CUDA_VISIBLE_DEVICES"]}')
 
