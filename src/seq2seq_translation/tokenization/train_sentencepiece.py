@@ -19,7 +19,7 @@ def main(
     os.makedirs(model_dir, exist_ok=True)
 
     wmt14 = WMT14(
-        out_dir=Path(datasets_out_dir) / 'wmt14_train',
+        out_dir=Path(datasets_out_dir),
         source_lang=source_lang,
         target_lang=target_lang,
         split='train'
@@ -32,13 +32,13 @@ def main(
 
     print('Constructing SentencePieceTokenizer source model')
     print('=' * 11)
-    SentencePieceTokenizer(input_path=str(Path(datasets_out_dir) / 'wmt14_train' / f'{source_lang}.txt'),
+    SentencePieceTokenizer(input_path=str(Path(datasets_out_dir) / f'{source_lang}.txt'),
                                               vocab_size=source_vocab_size,
                                               model_prefix=str(source_model_prefix))
 
     print('Constructing SentencePieceTokenizer target model')
     print('=' * 11)
-    SentencePieceTokenizer(input_path=str(Path(datasets_out_dir) / 'wmt14_train' / f'{target_lang}.txt'),
+    SentencePieceTokenizer(input_path=str(Path(datasets_out_dir) / f'{target_lang}.txt'),
                                               vocab_size=target_vocab_size,
                                               model_prefix=str(target_model_prefix))
 
