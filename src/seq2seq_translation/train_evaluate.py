@@ -135,8 +135,8 @@ def estimate_performance_metrics(
 
         data_loader_iter = iter(data_loader)
 
-        local_losses = torch.zeros(eval_iters, device=encoder.device)
-        local_bleu_scores = torch.zeros(eval_iters, device=encoder.device)
+        local_losses = torch.zeros(eval_iters, device=os.environ['DEVICE'])
+        local_bleu_scores = torch.zeros(eval_iters, device=os.environ['DEVICE'])
 
         if is_master_process():
             iterator = tqdm(range(eval_iters), desc=f'Evaluate performance on {data_loader_name} set', leave=False)
