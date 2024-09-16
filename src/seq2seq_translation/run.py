@@ -90,7 +90,8 @@ def main(
         eval_out_path: Optional[str] = None,
         is_test: bool = False,
         decoder_num_timesteps: int = 10000,
-        use_ddp: bool = False
+        use_ddp: bool = False,
+        num_train_dataloader_num_workers: int = 0
 ):
     if not evaluate_only and model_weights_out_dir is None:
         raise ValueError('must provide model_weights_out_dir')
@@ -192,7 +193,7 @@ def main(
             batch_size=batch_size,
             collate_fn=collate_fn,
             sampler=train_sampler,
-            num_workers=os.cpu_count(),
+            num_workers=num_train_dataloader_num_workers,
         )
         val_data_loader = DataLoader(
             dataset=val_dset,
@@ -360,6 +361,7 @@ if __name__ == '__main__':
     parser.add_argument('--is_test', action='store_true', default=False)
     parser.add_argument('--decoder_num_timesteps', type=int, default=10000)
     parser.add_argument('--use_ddp', action='store_true', default=False)
+    parser.add_argument('--num_train_dataloader_workers', type=int, default=0)
     args = parser.parse_args()
 
     if not any(args.attention_type == x.value for x in AttentionType):
@@ -402,5 +404,6 @@ if __name__ == '__main__':
          eval_out_path=args.eval_out_path,
          is_test=args.is_test,
          decoder_num_timesteps=args.decoder_num_timesteps,
-         use_ddp=args.use_ddp
+         use_ddp=args.use_ddp,
+         num_train_dataloader_num_workers=args.num_train_dataloader_workers
          )
