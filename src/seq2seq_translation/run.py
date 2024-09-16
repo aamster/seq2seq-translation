@@ -191,7 +191,8 @@ def main(
             shuffle=(train_sampler is None),
             batch_size=batch_size,
             collate_fn=collate_fn,
-            sampler=train_sampler
+            sampler=train_sampler,
+            num_workers=os.cpu_count(),
         )
         val_data_loader = DataLoader(
             dataset=val_dset,
