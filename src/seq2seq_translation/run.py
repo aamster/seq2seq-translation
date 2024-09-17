@@ -194,6 +194,7 @@ def main(
             collate_fn=collate_fn,
             sampler=train_sampler,
             num_workers=num_train_dataloader_num_workers,
+            pin_memory=True
         )
         val_data_loader = DataLoader(
             dataset=val_dset,

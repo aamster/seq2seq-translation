@@ -221,12 +221,14 @@ def train_epoch(
     prog_bar = tqdm(train_data_loader, total=len(train_data_loader), desc=f'train epoch {epoch}')
     for epoch_iter, data in enumerate(prog_bar):
         input_tensor, target_tensor, _, input_lengths = data
+        input_tensor: torch.Tensor
+        target_tensor: torch.Tensor
 
         global_iter_num = (epoch-1) * len(train_data_loader) + epoch_iter
 
         if torch.cuda.is_available():
-            input_tensor = input_tensor.to(torch.device(os.environ['DEVICE']))
-            target_tensor = target_tensor.to(torch.device(os.environ['DEVICE']))
+            input_tensor = input_tensor.to(torch.device(os.environ['DEVICE']), non_blocking=True)
+            target_tensor = target_tensor.to(torch.device(os.environ['DEVICE']), non_blocking=True)
 
         if decay_learning_rate:
             lr = _get_lr(
