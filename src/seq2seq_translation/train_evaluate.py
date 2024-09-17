@@ -1,5 +1,6 @@
 import logging
 import sys
+from contextlib import nullcontext
 
 import math
 import os
@@ -216,7 +217,10 @@ def train_epoch(
     eval_interval: int = 2000,
     eval_iters: int = 200,
 ):
-
+    device_type = 'cpu' if 'cpu' in os.environ['DEVICE'] else 'gpu'
+    scaler = torch.cuda.amp.GradScaler(enabled=(device_type == 'gpu'))
+    ctx = nullcontext() if device_type == 'cpu' else torch.amp.autocast(device_type=device_type,
+                                                                        dtype=torch.float16)
     total_loss = 0
     prog_bar = tqdm(train_data_loader, total=len(train_data_loader), desc=f'train epoch {epoch}')
     for epoch_iter, data in enumerate(prog_bar):
@@ -279,43 +283,47 @@ def train_epoch(
         encoder_optimizer.zero_grad()
         decoder_optimizer.zero_grad()
 
-        encoder_outputs, encoder_hidden = encoder(input_tensor, input_lengths=input_lengths)
+        with ctx:
+            encoder_outputs, encoder_hidden = encoder(input_tensor, input_lengths=input_lengths)
 
-        decoder_res = decoder(
-            encoder_outputs=encoder_outputs,
-            encoder_hidden=encoder_hidden,
-            target_tensor=target_tensor
-        )
+            decoder_res = decoder(
+                encoder_outputs=encoder_outputs,
+                encoder_hidden=encoder_hidden,
+                target_tensor=target_tensor
+            )
 
-        if len(decoder_res) == 3:
-            decoder_outputs, decoder_hidden, decoder_attn = decoder_res
-        else:
-            decoder_outputs, decoder_hidden = decoder_res
+            if len(decoder_res) == 3:
+                decoder_outputs, decoder_hidden, decoder_attn = decoder_res
+            else:
+                decoder_outputs, decoder_hidden = decoder_res
 
-        batch_size = target_tensor.shape[0]
-        C = decoder_outputs.shape[-1]
-        T = target_tensor.shape[-1]
+            batch_size = target_tensor.shape[0]
+            C = decoder_outputs.shape[-1]
+            T = target_tensor.shape[-1]
 
-        # if decoder_outputs shorter than target_tensor, pad it so that shapes match
-        decoder_outputs = torch.nn.functional.pad(
-            decoder_outputs,
-            (0, 0, 0, max(0, target_tensor.shape[1] - decoder_outputs.shape[1])),
-            value=train_data_loader.dataset.target_tokenizer.processor.pad_id())
+            # if decoder_outputs shorter than target_tensor, pad it so that shapes match
+            decoder_outputs = torch.nn.functional.pad(
+                decoder_outputs,
+                (0, 0, 0, max(0, target_tensor.shape[1] - decoder_outputs.shape[1])),
+                value=train_data_loader.dataset.target_tokenizer.processor.pad_id())
 
-        loss = criterion(
-            decoder_outputs.reshape(batch_size * T, C),
-            target_tensor.view(batch_size * T)
-        )
+            loss = criterion(
+                decoder_outputs.reshape(batch_size * T, C),
+                target_tensor.view(batch_size * T)
+            )
         prog_bar.set_postfix_str(f'Iter num {global_iter_num}: loss {loss.item():.4f}')
         prog_bar.update()
 
-        loss.backward()
+        scaler.scale(loss).backward()
 
+        scaler.unscale_(encoder_optimizer)
+        scaler.unscale_(decoder_optimizer)
         torch.nn.utils.clip_grad_norm_(encoder.parameters(), 1.0)
         torch.nn.utils.clip_grad_norm_(decoder.parameters(), 1.0)
 
-        encoder_optimizer.step()
-        decoder_optimizer.step()
+        scaler.step(encoder_optimizer)
+        scaler.step(decoder_optimizer)
+        scaler.update()
 
         total_loss += loss.item()
 
