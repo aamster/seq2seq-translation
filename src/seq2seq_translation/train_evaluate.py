@@ -261,7 +261,8 @@ def train_epoch(
                 encoder=encoder,
                 decoder=decoder,
                 eval_iters=eval_iters,
-                epoch=epoch
+                epoch=epoch,
+                ctx=ctx
             )
 
             if is_master_process():
