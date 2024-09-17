@@ -96,6 +96,7 @@ def estimate_performance_metrics(
     encoder: EncoderRNN,
     decoder: DecoderRNN | AttnDecoderRNN,
     epoch: int,
+    ctx: nullcontext | torch.amp.autocast,
     eval_iters: int = 200
 ):
     out = {'train': {}, 'val': {}}
@@ -151,9 +152,10 @@ def estimate_performance_metrics(
                 input_tensor = input_tensor.to(torch.device(os.environ['DEVICE']))
                 target_tensor = target_tensor.to(torch.device(os.environ['DEVICE']))
 
-            decoder_outputs, _, _, decoded_ids = inference(
-                encoder=encoder, decoder=decoder, input_tensor=input_tensor, target_tensor=target_tensor if data_loader_name == 'train' else None, input_lengths=input_lengths
-            )
+            with ctx:
+                decoder_outputs, _, _, decoded_ids = inference(
+                    encoder=encoder, decoder=decoder, input_tensor=input_tensor, target_tensor=target_tensor if data_loader_name == 'train' else None, input_lengths=input_lengths
+                )
 
             if data_loader_name == 'train':
                 loss = _compute_loss(decoder_outputs, target_tensor, criterion, train_loader)
@@ -182,15 +184,16 @@ def estimate_performance_metrics(
                 'bleu_score': avg_bleu
             }
             if is_master_process():
-                decoded_input, predicted_target, decoded_target, dataset_name = get_pred(
-                    encoder=encoder,
-                    decoder=decoder,
-                    data_loader=data_loader,
-                    source_tokenizer=data_loader.dataset.source_tokenizer,
-                    target_tokenizer=data_loader.dataset.target_tokenizer,
-                    idx=torch.randint(low=0, high=len(data_loader.dataset), size=(1,))[0].item()
+                with ctx:
+                    decoded_input, predicted_target, decoded_target, dataset_name = get_pred(
+                        encoder=encoder,
+                        decoder=decoder,
+                        data_loader=data_loader,
+                        source_tokenizer=data_loader.dataset.source_tokenizer,
+                        target_tokenizer=data_loader.dataset.target_tokenizer,
+                        idx=torch.randint(low=0, high=len(data_loader.dataset), size=(1,))[0].item()
 
-                )
+                    )
                 print('dataset:', dataset_name)
                 print('input:', decoded_input)
                 print('target:', decoded_target)
