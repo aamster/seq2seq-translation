@@ -217,8 +217,8 @@ def train_epoch(
     eval_interval: int = 2000,
     eval_iters: int = 200,
 ):
-    device_type = 'cpu' if 'cpu' in os.environ['DEVICE'] else 'gpu'
-    scaler = torch.cuda.amp.GradScaler(enabled=(device_type == 'gpu'))
+    device_type = 'cpu' if 'cpu' in os.environ['DEVICE'] else 'cuda'
+    scaler = torch.cuda.amp.GradScaler(enabled=(device_type == 'cuda'))
     ctx = nullcontext() if device_type == 'cpu' else torch.amp.autocast(device_type=device_type,
                                                                         dtype=torch.float16)
     total_loss = 0
