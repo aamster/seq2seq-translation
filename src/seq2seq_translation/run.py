@@ -206,7 +206,6 @@ def main(
         test_data_loader = DataLoader(
             dataset=test_dset,
             shuffle=False,
-            sampler=DistributedSampler(test_dset) if use_ddp else None,
             batch_size=batch_size,
             collate_fn=collate_fn
         )
@@ -309,7 +308,7 @@ def main(
                      'pred': val_decoded_text,
                      'target': val_targets
                      })
-                df.to_csv(eval_out_path.parent / f'{eval_out_path.stem}_{distributed_context.ddp_local_rank}.csv', index=False)
+                df.to_csv(eval_out_path, index=False)
             else:
                 train(
                     train_dataloader=train_data_loader,
