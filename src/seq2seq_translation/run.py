@@ -88,7 +88,7 @@ def main(
         decay_learning_rate: bool = True,
         eval_interval: int = 2000,
         eval_iters: int = 200,
-        eval_out_path: Optional[str] = None,
+        eval_out_path: Optional[Path] = None,
         is_test: bool = False,
         decoder_num_timesteps: int = 10000,
         use_ddp: bool = False,
@@ -309,7 +309,7 @@ def main(
                      'pred': val_decoded_text,
                      'target': val_targets
                      })
-                df.to_csv(eval_out_path, index=False)
+                df.to_csv(eval_out_path.parent / f'{eval_out_path.stem}_{distributed_context.ddp_local_rank}.csv', index=False)
             else:
                 train(
                     train_dataloader=train_data_loader,
@@ -408,7 +408,7 @@ if __name__ == '__main__':
          compile=args.compile,
          eval_interval=args.eval_interval,
          eval_iters=args.eval_iters,
-         eval_out_path=args.eval_out_path,
+         eval_out_path=Path(args.eval_out_path),
          is_test=args.is_test,
          decoder_num_timesteps=args.decoder_num_timesteps,
          use_ddp=args.use_ddp,
