@@ -206,6 +206,7 @@ def main(
         test_data_loader = DataLoader(
             dataset=test_dset,
             shuffle=False,
+            sampler=DistributedSampler(test_dset) if use_ddp else None,
             batch_size=batch_size,
             collate_fn=collate_fn
         )
@@ -290,6 +291,7 @@ def main(
             decoder = torch.compile(decoder)
 
         ctx = torch.amp.autocast(device_type=device.type, dtype=torch.float16) if device.type == 'cuda' else nullcontext()
+        logger.info(f'using ctx {ctx}')
 
         with ctx:
             if evaluate_only:
