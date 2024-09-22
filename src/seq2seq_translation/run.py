@@ -289,8 +289,7 @@ def main(
             encoder = torch.compile(encoder)
             decoder = torch.compile(decoder)
 
-        device_type = 'cuda' if 'cuda' in device else 'cpu'
-        ctx = torch.amp.autocast(device_type=device_type, dtype=torch.float16) if device_type == 'cuda' else nullcontext()
+        ctx = torch.amp.autocast(device_type=device.type, dtype=torch.float16) if device.type == 'cuda' else nullcontext()
 
         with ctx:
             if evaluate_only:
