@@ -96,7 +96,6 @@ def estimate_performance_metrics(
     encoder: EncoderRNN,
     decoder: DecoderRNN | AttnDecoderRNN,
     epoch: int,
-    ctx: nullcontext | torch.amp.autocast,
     eval_iters: int = 200
 ):
     out = {'train': {}, 'val': {}}
@@ -152,10 +151,9 @@ def estimate_performance_metrics(
                 input_tensor = input_tensor.to(torch.device(os.environ['DEVICE']))
                 target_tensor = target_tensor.to(torch.device(os.environ['DEVICE']))
 
-            with ctx:
-                decoder_outputs, _, _, decoded_ids = inference(
-                    encoder=encoder, decoder=decoder, input_tensor=input_tensor, target_tensor=target_tensor if data_loader_name == 'train' else None, input_lengths=input_lengths
-                )
+            decoder_outputs, _, _, decoded_ids = inference(
+                encoder=encoder, decoder=decoder, input_tensor=input_tensor, target_tensor=target_tensor if data_loader_name == 'train' else None, input_lengths=input_lengths
+            )
 
             if data_loader_name == 'train':
                 loss = _compute_loss(decoder_outputs, target_tensor, criterion, train_loader)
@@ -184,16 +182,15 @@ def estimate_performance_metrics(
                 'bleu_score': avg_bleu
             }
             if is_master_process():
-                with ctx:
-                    decoded_input, predicted_target, decoded_target, dataset_name = get_pred(
-                        encoder=encoder,
-                        decoder=decoder,
-                        data_loader=data_loader,
-                        source_tokenizer=data_loader.dataset.source_tokenizer,
-                        target_tokenizer=data_loader.dataset.target_tokenizer,
-                        idx=torch.randint(low=0, high=len(data_loader.dataset), size=(1,))[0].item()
+                decoded_input, predicted_target, decoded_target, dataset_name = get_pred(
+                    encoder=encoder,
+                    decoder=decoder,
+                    data_loader=data_loader,
+                    source_tokenizer=data_loader.dataset.source_tokenizer,
+                    target_tokenizer=data_loader.dataset.target_tokenizer,
+                    idx=torch.randint(low=0, high=len(data_loader.dataset), size=(1,))[0].item()
 
-                    )
+                )
                 print('dataset:', dataset_name)
                 print('input:', decoded_input)
                 print('target:', decoded_target)
@@ -222,8 +219,7 @@ def train_epoch(
 ):
     device_type = 'cpu' if 'cpu' in os.environ['DEVICE'] else 'cuda'
     scaler = torch.cuda.amp.GradScaler(enabled=(device_type == 'cuda'))
-    ctx = nullcontext() if device_type == 'cpu' else torch.amp.autocast(device_type=device_type,
-                                                                        dtype=torch.float16)
+
     total_loss = 0
     prog_bar = tqdm(train_data_loader, total=len(train_data_loader), desc=f'train epoch {epoch}')
     for epoch_iter, data in enumerate(prog_bar):
@@ -262,7 +258,6 @@ def train_epoch(
                 decoder=decoder,
                 eval_iters=eval_iters,
                 epoch=epoch,
-                ctx=ctx
             )
 
             if is_master_process():
@@ -287,34 +282,33 @@ def train_epoch(
         encoder_optimizer.zero_grad()
         decoder_optimizer.zero_grad()
 
-        with ctx:
-            encoder_outputs, encoder_hidden = encoder(input_tensor, input_lengths=input_lengths)
+        encoder_outputs, encoder_hidden = encoder(input_tensor, input_lengths=input_lengths)
 
-            decoder_res = decoder(
-                encoder_outputs=encoder_outputs,
-                encoder_hidden=encoder_hidden,
-                target_tensor=target_tensor
-            )
+        decoder_res = decoder(
+            encoder_outputs=encoder_outputs,
+            encoder_hidden=encoder_hidden,
+            target_tensor=target_tensor
+        )
 
-            if len(decoder_res) == 3:
-                decoder_outputs, decoder_hidden, decoder_attn = decoder_res
-            else:
-                decoder_outputs, decoder_hidden = decoder_res
+        if len(decoder_res) == 3:
+            decoder_outputs, decoder_hidden, decoder_attn = decoder_res
+        else:
+            decoder_outputs, decoder_hidden = decoder_res
 
-            batch_size = target_tensor.shape[0]
-            C = decoder_outputs.shape[-1]
-            T = target_tensor.shape[-1]
+        batch_size = target_tensor.shape[0]
+        C = decoder_outputs.shape[-1]
+        T = target_tensor.shape[-1]
 
-            # if decoder_outputs shorter than target_tensor, pad it so that shapes match
-            decoder_outputs = torch.nn.functional.pad(
-                decoder_outputs,
-                (0, 0, 0, max(0, target_tensor.shape[1] - decoder_outputs.shape[1])),
-                value=train_data_loader.dataset.target_tokenizer.processor.pad_id())
+        # if decoder_outputs shorter than target_tensor, pad it so that shapes match
+        decoder_outputs = torch.nn.functional.pad(
+            decoder_outputs,
+            (0, 0, 0, max(0, target_tensor.shape[1] - decoder_outputs.shape[1])),
+            value=train_data_loader.dataset.target_tokenizer.processor.pad_id())
 
-            loss = criterion(
-                decoder_outputs.reshape(batch_size * T, C),
-                target_tensor.view(batch_size * T)
-            )
+        loss = criterion(
+            decoder_outputs.reshape(batch_size * T, C),
+            target_tensor.view(batch_size * T)
+        )
         prog_bar.set_postfix_str(f'Iter num {global_iter_num}: loss {loss.item():.4f}')
         prog_bar.update()
 
@@ -395,7 +389,8 @@ def evaluate(
     data_loader: DataLoader,
     source_tokenizer: SentencePieceTokenizer,
     target_tokenizer: SentencePieceTokenizer,
-    sequence_generator_type: Type[SequenceGenerator] = BeamSearchSequenceGenerator
+    sequence_generator_type: Type[SequenceGenerator] = BeamSearchSequenceGenerator,
+
 ):
     encoder.eval()
     decoder.eval()
@@ -463,7 +458,7 @@ def train(
         weight_decay=0.0,
         decay_learning_rate: bool = True,
         eval_interval: int = 2000,
-        eval_iters: int = 200
+        eval_iters: int = 200,
 ):
     os.makedirs(model_weights_out_dir, exist_ok=True)
 

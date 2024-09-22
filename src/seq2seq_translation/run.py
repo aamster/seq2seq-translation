@@ -4,6 +4,7 @@ import os
 import sys
 from argparse import ArgumentParser
 from collections import OrderedDict
+from contextlib import nullcontext
 from pathlib import Path
 from typing import Optional
 
@@ -288,38 +289,42 @@ def main(
             encoder = torch.compile(encoder)
             decoder = torch.compile(decoder)
 
-        if evaluate_only:
-            val_decoded_text, val_targets, val_bleu, val_bleus, input_lengths = evaluate(
-                encoder=encoder,
-                decoder=decoder,
-                data_loader=test_data_loader if is_test else val_data_loader,
-                source_tokenizer=source_tokenizer,
-                target_tokenizer=target_tokenizer,
-            )
-            print(f'bleu: {val_bleu}')
-            df = pd.DataFrame(
-                {'bleu': val_bleus,
-                 'input_length': input_lengths,
-                 'pred': val_decoded_text,
-                 'target': val_targets
-                 })
-            df.to_csv(eval_out_path, index=False)
-        else:
-            train(
-                train_dataloader=train_data_loader,
-                val_dataloader=val_data_loader,
-                encoder=encoder,
-                decoder=decoder,
-                model_weights_out_dir=model_weights_out_dir,
-                n_epochs=n_epochs,
-                source_tokenizer=source_tokenizer,
-                target_tokenizer=target_tokenizer,
-                learning_rate=learning_rate,
-                weight_decay=weight_decay,
-                decay_learning_rate=decay_learning_rate,
-                eval_interval=eval_interval,
-                eval_iters=eval_iters
-            )
+        device_type = 'cuda' if 'cuda' in device else 'cpu'
+        ctx = torch.amp.autocast(device_type=device_type, dtype=torch.float16) if device_type == 'cuda' else nullcontext()
+
+        with ctx:
+            if evaluate_only:
+                val_decoded_text, val_targets, val_bleu, val_bleus, input_lengths = evaluate(
+                    encoder=encoder,
+                    decoder=decoder,
+                    data_loader=test_data_loader if is_test else val_data_loader,
+                    source_tokenizer=source_tokenizer,
+                    target_tokenizer=target_tokenizer,
+                )
+                print(f'bleu: {val_bleu}')
+                df = pd.DataFrame(
+                    {'bleu': val_bleus,
+                     'input_length': input_lengths,
+                     'pred': val_decoded_text,
+                     'target': val_targets
+                     })
+                df.to_csv(eval_out_path, index=False)
+            else:
+                train(
+                    train_dataloader=train_data_loader,
+                    val_dataloader=val_data_loader,
+                    encoder=encoder,
+                    decoder=decoder,
+                    model_weights_out_dir=model_weights_out_dir,
+                    n_epochs=n_epochs,
+                    source_tokenizer=source_tokenizer,
+                    target_tokenizer=target_tokenizer,
+                    learning_rate=learning_rate,
+                    weight_decay=weight_decay,
+                    decay_learning_rate=decay_learning_rate,
+                    eval_interval=eval_interval,
+                    eval_iters=eval_iters
+                )
 
 
 if __name__ == '__main__':
