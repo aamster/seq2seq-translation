@@ -56,7 +56,7 @@ class SingleProcessContextManager:
 
     @property
     def ddp_local_rank(self):
-        raise NotImplementedError
+        return 'main'
 
     @property
     def rank(self):
