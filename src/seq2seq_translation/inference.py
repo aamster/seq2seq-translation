@@ -90,7 +90,7 @@ class BeamSearchSequenceGenerator(SequenceGenerator):
                 if decoded_sequence[:, -1].item() == self._tokenizer.processor.eos_id():
                     continue
                 with torch.no_grad():
-                    if isinstance(self._decoder, AttnDecoderRNN):
+                    if isinstance(self._encoder_decoder.decoder, AttnDecoderRNN):
                         topk_indices, topk_scores, _, _, new_decoder_hidden = self._encoder_decoder.decoder.decode_step(
                             decoder_input=decoder_input,
                             decoder_hidden=decoder_hidden,
@@ -99,7 +99,7 @@ class BeamSearchSequenceGenerator(SequenceGenerator):
                             k=self.beam_width,
                             softmax_scores=True
                         )
-                    elif isinstance(self._decoder, DecoderRNN):
+                    elif isinstance(self._encoder_decoder.decoder, DecoderRNN):
                         topk_indices, topk_scores, _, new_decoder_hidden = self._encoder_decoder.decoder.decode_step(
                             decoder_input=decoder_input,
                             decoder_hidden=decoder_hidden,
