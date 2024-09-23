@@ -397,3 +397,39 @@ class AttnDecoderRNN(DecoderRNN):
         keys = encoder_outputs
         context = torch.bmm(attn_weights, keys)
         return context
+
+
+class EncoderDecoder(nn.Module):
+    def __init__(
+        self,
+        encoder: EncoderRNN,
+        decoder: DecoderRNN | AttnDecoderRNN,
+    ):
+        self._encoder = encoder
+        self._decoder = decoder
+        super().__init__()
+
+    def forward(self, input, input_lengths, target_tensor: Optional[torch.Tensor] = None):
+        output, hidden = self._encoder(input=input, input_lengths=input_lengths)
+
+        decoder_res = self._decoder(
+            encoder_outputs=output,
+            encoder_hidden=hidden,
+            target_tensor=target_tensor
+        )
+
+        if len(decoder_res) == 3:
+            decoder_outputs, decoder_hidden, decoder_attn = decoder_res
+        else:
+            decoder_outputs, decoder_hidden = decoder_res
+            decoder_attn = None
+
+        return decoder_outputs, decoder_hidden, decoder_attn
+
+    @property
+    def encoder(self):
+        return self._encoder
+
+    @property
+    def decoder(self):
+        return self._decoder

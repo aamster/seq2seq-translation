@@ -21,7 +21,7 @@ import evaluate as huggingface_evaluate
 from seq2seq_translation.inference import SequenceGenerator, BeamSearchSequenceGenerator
 from seq2seq_translation.sentence_pairs_dataset import SentencePairsDataset
 from seq2seq_translation.tokenization.sentencepiece_tokenizer import SentencePieceTokenizer
-from seq2seq_translation.rnn import EncoderRNN, AttnDecoderRNN, DecoderRNN
+from seq2seq_translation.rnn import EncoderRNN, AttnDecoderRNN, DecoderRNN, EncoderDecoder
 from seq2seq_translation.utils.ddp_utils import is_master_process
 
 logging.basicConfig(
@@ -384,16 +384,14 @@ def inference(encoder, decoder, input_tensor, input_lengths: list[int], target_t
 
 @torch.no_grad()
 def evaluate(
-    encoder,
-    decoder,
+    encoder_decoder: EncoderDecoder,
     data_loader: DataLoader,
     source_tokenizer: SentencePieceTokenizer,
     target_tokenizer: SentencePieceTokenizer,
     sequence_generator_type: Type[SequenceGenerator] = BeamSearchSequenceGenerator,
 
 ):
-    encoder.eval()
-    decoder.eval()
+    encoder_decoder.eval()
 
     decoded_sentences = []
     targets = []
@@ -411,8 +409,7 @@ def evaluate(
         bleu = huggingface_evaluate.load('bleu')
 
         sequence_generator = sequence_generator_type(
-            encoder=encoder,
-            decoder=decoder,
+            encoder_decoder=encoder_decoder,
             tokenizer=target_tokenizer,
         )
         for i in range(len(input_tensor)):
@@ -438,8 +435,7 @@ def evaluate(
             targets.append(target)
             idx += 1
 
-    encoder.train()
-    decoder.train()
+    encoder_decoder.train()
 
     bleu_score = bleu_scores.mean()
     return decoded_sentences, targets, bleu_score, bleu_scores, input_lengths

@@ -5,7 +5,7 @@ import sys
 import torch
 import torch.nn.functional as F
 
-from seq2seq_translation.rnn import EncoderRNN, DecoderRNN, AttnDecoderRNN
+from seq2seq_translation.rnn import EncoderRNN, DecoderRNN, AttnDecoderRNN, EncoderDecoder
 from seq2seq_translation.tokenization.sentencepiece_tokenizer import SentencePieceTokenizer
 
 
@@ -22,10 +22,10 @@ def get_logger():
 
 logger = get_logger()
 
+
 class SequenceGenerator(abc.ABC):
-    def __init__(self, encoder: EncoderRNN, decoder: DecoderRNN, tokenizer: SentencePieceTokenizer):
-        self._encoder = encoder
-        self._decoder = decoder
+    def __init__(self, encoder_decoder: EncoderDecoder, tokenizer: SentencePieceTokenizer):
+        self._encoder_decoder = encoder_decoder
         self._tokenizer = tokenizer
 
     @abc.abstractmethod
@@ -34,19 +34,16 @@ class SequenceGenerator(abc.ABC):
 
 
 class GreedySequenceGenerator(SequenceGenerator):
-    def __init__(self, encoder: EncoderRNN, decoder: DecoderRNN, tokenizer: SentencePieceTokenizer, max_length: int = 72):
+    def __init__(self, encoder_decoder: EncoderDecoder, tokenizer: SentencePieceTokenizer, max_length: int = 72):
         super().__init__(
-            encoder=encoder,
-            decoder=decoder,
+            encoder_decoder=encoder_decoder,
             tokenizer=tokenizer,
         )
         self._max_length = max_length
 
     def generate(self, input_tensor: torch.tensor, input_lengths: list[int]):
-        encoder_outputs, encoder_hidden = self._encoder(input_tensor.unsqueeze(0), input_lengths=input_lengths)
-
-        decoder_output, _, _ = self._decoder(
-            encoder_hidden=encoder_hidden, encoder_outputs=encoder_outputs,
+        decoder_output, _, _ = self._encoder_decoder(
+            input_tensor.unsqueeze(0), input_lengths=input_lengths
         )
 
         _, topi = decoder_output.topk(k=1, dim=-1)
@@ -61,10 +58,9 @@ class GreedySequenceGenerator(SequenceGenerator):
 
 
 class BeamSearchSequenceGenerator(SequenceGenerator):
-    def __init__(self, encoder: EncoderRNN, decoder: DecoderRNN, tokenizer: SentencePieceTokenizer, beam_width=10, max_length=72):
+    def __init__(self, encoder_decoder: EncoderDecoder, tokenizer: SentencePieceTokenizer, beam_width=10, max_length=72):
         super().__init__(
-            encoder=encoder,
-            decoder=decoder,
+            encoder_decoder=encoder_decoder,
             tokenizer=tokenizer
         )
         self.beam_width = beam_width
@@ -73,9 +69,9 @@ class BeamSearchSequenceGenerator(SequenceGenerator):
     def generate(self, input_tensor: torch.tensor, input_lengths: list[int]):
         src_tensor = input_tensor.unsqueeze(0)
 
-        encoder_outputs, encoder_hidden = self._encoder(src_tensor, input_lengths=input_lengths)
+        encoder_outputs, encoder_hidden = self._encoder_decoder.encoder(src_tensor, input_lengths=input_lengths)
 
-        initial_decoder_input, decoder_hidden, _ = self._decoder.initialize_forward(
+        initial_decoder_input, decoder_hidden, _ = self._encoder_decoder.decoder.initialize_forward(
             encoder_hidden=encoder_hidden
         )
 
@@ -95,7 +91,7 @@ class BeamSearchSequenceGenerator(SequenceGenerator):
                     continue
                 with torch.no_grad():
                     if isinstance(self._decoder, AttnDecoderRNN):
-                        topk_indices, topk_scores, _, _, new_decoder_hidden = self._decoder.decode_step(
+                        topk_indices, topk_scores, _, _, new_decoder_hidden = self._encoder_decoder.decoder.decode_step(
                             decoder_input=decoder_input,
                             decoder_hidden=decoder_hidden,
                             encoder_hidden=encoder_hidden,
@@ -104,7 +100,7 @@ class BeamSearchSequenceGenerator(SequenceGenerator):
                             softmax_scores=True
                         )
                     elif isinstance(self._decoder, DecoderRNN):
-                        topk_indices, topk_scores, _, new_decoder_hidden = self._decoder.decode_step(
+                        topk_indices, topk_scores, _, new_decoder_hidden = self._encoder_decoder.decoder.decode_step(
                             decoder_input=decoder_input,
                             decoder_hidden=decoder_hidden,
                             encoder_hidden=encoder_hidden,

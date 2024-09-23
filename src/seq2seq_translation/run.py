@@ -21,7 +21,7 @@ from seq2seq_translation.data_loading import \
 from seq2seq_translation.datasets.datasets import LanguagePairsDatasets
 from seq2seq_translation.sentence_pairs_dataset import SentencePairsDataset
 from seq2seq_translation.tokenization.sentencepiece_tokenizer import SentencePieceTokenizer
-from seq2seq_translation.rnn import EncoderRNN, DecoderRNN, AttnDecoderRNN
+from seq2seq_translation.rnn import EncoderRNN, DecoderRNN, AttnDecoderRNN, EncoderDecoder
 from seq2seq_translation.train_evaluate import train, evaluate
 from seq2seq_translation.utils.ddp_utils import DistributedContextManager, \
     SingleProcessContextManager
@@ -279,16 +279,17 @@ def main(
                 decoder.load_state_dict(
                     _remove_module_from_state_dict(torch.load(Path(model_weights_path) / 'decoder.pt', map_location=device))
                 )
-
+        encoder_decoder = EncoderDecoder(
+            encoder=encoder,
+            decoder=decoder
+        )
         if use_ddp:
-            encoder = DDP(encoder, device_ids=[distributed_context.ddp_local_rank])
-            decoder = DDP(decoder, device_ids=[distributed_context.ddp_local_rank])
+            encoder_decoder = DDP(encoder_decoder, device_ids=[distributed_context.ddp_local_rank])
 
         if compile:
             # requires PyTorch 2.0
             print("compiling the model... (takes a ~minute)")
-            encoder = torch.compile(encoder)
-            decoder = torch.compile(decoder)
+            encoder_decoder = torch.compile(encoder_decoder)
 
         ctx = torch.amp.autocast(device_type=device.type, dtype=torch.float16) if device.type == 'cuda' else nullcontext()
         logger.info(f'using ctx {ctx}')
@@ -296,8 +297,7 @@ def main(
         with ctx:
             if evaluate_only:
                 val_decoded_text, val_targets, val_bleu, val_bleus, input_lengths = evaluate(
-                    encoder=encoder,
-                    decoder=decoder,
+                    encoder_decoder=encoder_decoder,
                     data_loader=test_data_loader if is_test else val_data_loader,
                     source_tokenizer=source_tokenizer,
                     target_tokenizer=target_tokenizer,
