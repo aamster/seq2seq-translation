@@ -405,9 +405,9 @@ class EncoderDecoder(nn.Module):
         encoder: EncoderRNN,
         decoder: DecoderRNN | AttnDecoderRNN,
     ):
+        super().__init__()
         self._encoder = encoder
         self._decoder = decoder
-        super().__init__()
 
     def forward(self, input, input_lengths, target_tensor: Optional[torch.Tensor] = None):
         output, hidden = self._encoder(input=input, input_lengths=input_lengths)
