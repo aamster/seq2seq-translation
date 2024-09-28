@@ -19,6 +19,7 @@ from seq2seq_translation.attention import AttentionType
 from seq2seq_translation.data_loading import \
     DataSplitter, CollateFunction
 from seq2seq_translation.datasets.datasets import LanguagePairsDatasets
+from seq2seq_translation.inference import BeamSearchSequenceGenerator, GreedySequenceGenerator
 from seq2seq_translation.sentence_pairs_dataset import SentencePairsDataset
 from seq2seq_translation.tokenization.sentencepiece_tokenizer import SentencePieceTokenizer
 from seq2seq_translation.rnn import EncoderRNN, DecoderRNN, AttnDecoderRNN, EncoderDecoder
@@ -92,7 +93,8 @@ def main(
         is_test: bool = False,
         decoder_num_timesteps: int = 10000,
         use_ddp: bool = False,
-        num_train_dataloader_num_workers: int = 0
+        num_train_dataloader_num_workers: int = 0,
+        eval_sequence_generator_type: str = 'beam search'
 ):
     if not evaluate_only and model_weights_out_dir is None:
         raise ValueError('must provide model_weights_out_dir')
@@ -301,6 +303,7 @@ def main(
                     data_loader=test_data_loader if is_test else val_data_loader,
                     source_tokenizer=source_tokenizer,
                     target_tokenizer=target_tokenizer,
+                    sequence_generator_type=BeamSearchSequenceGenerator if eval_sequence_generator_type == 'beam search' else GreedySequenceGenerator
                 )
                 print(f'bleu: {val_bleu}')
                 df = pd.DataFrame(
@@ -369,6 +372,7 @@ if __name__ == '__main__':
     parser.add_argument('--decoder_num_timesteps', type=int, default=10000)
     parser.add_argument('--use_ddp', action='store_true', default=False)
     parser.add_argument('--num_train_dataloader_workers', type=int, default=0)
+    parser.add_argument('--eval_sequence_generator_type', default='beam search')
     args = parser.parse_args()
 
     if not any(args.attention_type == x.value for x in AttentionType):
@@ -412,5 +416,6 @@ if __name__ == '__main__':
          is_test=args.is_test,
          decoder_num_timesteps=args.decoder_num_timesteps,
          use_ddp=args.use_ddp,
-         num_train_dataloader_num_workers=args.num_train_dataloader_workers
+         num_train_dataloader_num_workers=args.num_train_dataloader_workers,
+         eval_sequence_generator_type=args.eval_sequence_generator_type
          )
