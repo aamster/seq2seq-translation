@@ -37,4 +37,6 @@ EVAL_OUT_PATH="/path/to/output/eval"
 
 ### Example
 
-An example of using the model for inference is [here](scripts/)
+An example of using the model for inference is [here](scripts/2024-10-03-sequence_to_sequence_models_1/inference_example.ipynb)
+
+This uses an out of sample example from the article to test on!!
