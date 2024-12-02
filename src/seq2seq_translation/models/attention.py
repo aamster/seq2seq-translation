@@ -32,11 +32,7 @@ class BahdanauAttention(nn.Module):
 
 class CosineSimilarityAttention(nn.Module):
     def __init__(
-        self,
-        encoder_output_size: int,
-        query_dim: int,
-        Dv: int,
-        dropout: float = 0.0
+        self, encoder_output_size: int, query_dim: int, Dv: int, dropout: float = 0.0
     ):
         super().__init__()
         Dx = encoder_output_size
@@ -56,13 +52,13 @@ class CosineSimilarityAttention(nn.Module):
         keys = self.Wk(x)
         values = self.Wv(x)
 
-        query = query[-1].unsqueeze(0)    # take only the last hidden layer
+        query = query[-1].unsqueeze(0)  # take only the last hidden layer
         Dq = query.shape[-1]
         query = query.squeeze(0).unsqueeze(1)
         scores = torch.bmm(query, keys.transpose(1, 2)) / math.sqrt(Dq)
 
         # mask the pad token
-        scores = scores.masked_fill(mask.unsqueeze(1), float('-inf'))
+        scores = scores.masked_fill(mask.unsqueeze(1), float("-inf"))
 
         attention = F.softmax(scores, dim=-1)
         attention = self.dropout(attention)
@@ -71,5 +67,5 @@ class CosineSimilarityAttention(nn.Module):
 
 
 class AttentionType(Enum):
-    CosineSimilarityAttention = 'CosineSimilarityAttention'
-    BahdanauAttention = 'BahdanauAttention'
+    CosineSimilarityAttention = "CosineSimilarityAttention"
+    BahdanauAttention = "BahdanauAttention"

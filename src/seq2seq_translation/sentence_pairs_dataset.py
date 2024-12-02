@@ -5,7 +5,9 @@ import torch
 from torch.utils.data import Dataset
 
 from seq2seq_translation.datasets.datasets import LanguagePairsDatasets
-from seq2seq_translation.tokenization.sentencepiece_tokenizer import SentencePieceTokenizer
+from seq2seq_translation.tokenization.sentencepiece_tokenizer import (
+    SentencePieceTokenizer,
+)
 
 
 class SentencePairsDataset(Dataset):
@@ -43,14 +45,15 @@ class SentencePairsDataset(Dataset):
         Create transforms based on given vocabulary. The returned transform is applied to sequence
         of tokens.
         """
+
         def transform(x):
             if max_len is not None:
                 x = x[:max_len]
 
-            x = [self._source_tokenizer.processor.bos_id()] + x
             x.append(self._source_tokenizer.processor.eos_id())
             x = torch.tensor(x)
             return x
+
         return transform
 
     @property

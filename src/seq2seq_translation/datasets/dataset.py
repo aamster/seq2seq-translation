@@ -44,10 +44,10 @@ class LanguagePairsDataset(abc.ABC):
     def _create_index(filepath: Path):
         index = []
         offset = 0
-        with open(filepath, 'r') as file:
+        with open(filepath, "r") as file:
             for i, line in enumerate(file):
                 index.append(offset)
-                offset += len(line.encode('utf-8'))
+                offset += len(line.encode("utf-8"))
         return index
 
     @abc.abstractmethod
@@ -61,11 +61,13 @@ class LanguagePairsDataset(abc.ABC):
     def _sample(self):
         idxs = np.arange(len(self._source_index))
         np.random.shuffle(idxs)
-        idxs = idxs[:int(len(idxs) * self._sample_frac)]
+        idxs = idxs[: int(len(idxs) * self._sample_frac)]
         source_index = [self._source_index[idx] for idx in idxs]
         target_index = [self._target_index[idx] for idx in idxs]
 
-        print(f'Number of examples for {type(self)} after sampling {self._sample_frac}: {len(source_index)}')
+        print(
+            f"Number of examples for {type(self)} after sampling {self._sample_frac}: {len(source_index)}"
+        )
         return source_index, target_index
 
 
@@ -76,11 +78,11 @@ def _download_and_extract(url: str, gzip_path: Path, out_path: Path):
         for chunk in response.iter_content(chunk_size=8192):
             file.write(chunk)
 
-    with gzip.open(gzip_path, 'rb') as f_in:
-        with open(out_path, 'wb') as f_out:
+    with gzip.open(gzip_path, "rb") as f_in:
+        with open(out_path, "wb") as f_out:
             shutil.copyfileobj(f_in, f_out)
 
-    os.remove(f'{out_path}.tsv.gz')
+    os.remove(f"{out_path}.tsv.gz")
 
 
 def _separate_single_language_file(path: Path, source_path: Path, target_path: Path):
@@ -90,22 +92,22 @@ def _separate_single_language_file(path: Path, source_path: Path, target_path: P
     with open(path) as f:
         for line in f:
             if line.strip():
-                split = line.split('\t')
+                split = line.split("\t")
                 # europarl adds additional fields after source, target
                 split = split[:2]
                 source, target = split
-                source_lines.append(source + '\n')
+                source_lines.append(source + "\n")
                 if len(target) == 0:
-                    target = '\n'
-                if target[-1] != '\n':
-                    target += '\n'
+                    target = "\n"
+                if target[-1] != "\n":
+                    target += "\n"
                 target_lines.append(target)
 
-    with open(source_path, 'w') as f:
+    with open(source_path, "w") as f:
         for line in source_lines:
             f.write(line)
 
-    with open(target_path, 'w') as f:
+    with open(target_path, "w") as f:
         for line in target_lines:
             f.write(line)
 

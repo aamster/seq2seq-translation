@@ -6,15 +6,15 @@ from torch.distributed import init_process_group, destroy_process_group
 
 
 class DistributedContextManager:
-    def __init__(self, backend='nccl'):
+    def __init__(self, backend="nccl"):
         self._backend = backend
         self._ddp_rank = None
         self._ddp_local_rank = None
 
     def __enter__(self):
         init_process_group(backend=self._backend, timeout=timedelta(minutes=30))
-        ddp_rank = int(os.environ['RANK'])
-        ddp_local_rank = int(os.environ['LOCAL_RANK'])
+        ddp_rank = int(os.environ["RANK"])
+        ddp_local_rank = int(os.environ["LOCAL_RANK"])
         self._ddp_rank = ddp_rank
         self._ddp_local_rank = ddp_local_rank
         return self
@@ -56,12 +56,14 @@ class SingleProcessContextManager:
 
     @property
     def ddp_local_rank(self):
-        return 'main'
+        return "main"
 
     @property
     def rank(self):
-        return 'main'
+        return "main"
 
 
 def is_master_process():
-    return (torch.distributed.get_rank() if torch.distributed.is_initialized() else 0) == 0
+    return (
+        torch.distributed.get_rank() if torch.distributed.is_initialized() else 0
+    ) == 0

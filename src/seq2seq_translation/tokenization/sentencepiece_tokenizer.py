@@ -7,7 +7,12 @@ import torch
 
 
 class SentencePieceTokenizer:
-    def __init__(self, model_prefix: str, input_path: Optional[str] = None, vocab_size: Optional[int] = 13000):
+    def __init__(
+        self,
+        model_prefix: str,
+        input_path: Optional[str] = None,
+        vocab_size: Optional[int] = 13000,
+    ):
         self._processor = spm.SentencePieceProcessor()
         self._options = dict(
             # input spec
@@ -43,17 +48,17 @@ class SentencePieceTokenizer:
             eos_id=2,
             pad_id=3,
             # systems
-            num_threads=os.cpu_count()  # use ~all system resources
+            num_threads=os.cpu_count(),  # use ~all system resources
         )
-        self._model = f'{model_prefix}.model'
+        self._model = f"{model_prefix}.model"
 
         if Path(self._model).exists():
             self._processor.load(self._model)
         else:
             if input_path is None:
-                raise ValueError('Must provide train_path if training')
+                raise ValueError("Must provide train_path if training")
             if vocab_size is None:
-                raise ValueError('Must provide vocab_size if training')
+                raise ValueError("Must provide vocab_size if training")
             self.train()
 
     @property
@@ -62,7 +67,10 @@ class SentencePieceTokenizer:
 
     @property
     def vocab(self):
-        return dict([self.processor.id_to_piece(idx), idx] for idx in range(self.processor.get_piece_size()))
+        return dict(
+            [self.processor.id_to_piece(idx), idx]
+            for idx in range(self.processor.get_piece_size())
+        )
 
     def train(self):
         spm.SentencePieceTrainer.train(**self._options)

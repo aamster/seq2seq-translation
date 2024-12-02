@@ -11,30 +11,27 @@ class NaiveTokenizer:
     """
     Tokenizes text by splitting on space
     """
+
     def __init__(
         self,
         text: List[str],
         max_len: int,
         min_freq: int = 1,
-        specials: Tuple[str] = ('<pad>', '<sos>', '<eos>', '<unk>'),
-        truncate: bool = True
+        specials: Tuple[str] = ("<pad>", "<sos>", "<eos>", "<unk>"),
+        truncate: bool = True,
     ):
         self._vocab = build_vocab_from_iterator(
             self._get_tokens(text=text),
             min_freq=min_freq,
             specials=list(specials),
-            special_first=True
+            special_first=True,
         )
-        self._vocab.set_default_index(self._vocab['<unk>'])
+        self._vocab.set_default_index(self._vocab["<unk>"])
         self._transform = self._get_transform(max_len=max_len, truncate=truncate)
         self._itos = self._vocab.get_itos()
         self._stoi = self._vocab.get_stoi()
 
-    def __call__(
-        self,
-        x: str,
-        **kwargs
-    ):
+    def __call__(self, x: str, **kwargs):
         return self.encode(x=x)
 
     @property
@@ -54,17 +51,17 @@ class NaiveTokenizer:
 
     def convert_tokens_to_ids(self, tokens: List[str] | str):
         if isinstance(tokens, str):
-            return self._stoi.get(tokens, self._stoi['<unk>'])
+            return self._stoi.get(tokens, self._stoi["<unk>"])
         else:
-            return [self._stoi.get(x, self._stoi['<unk>']) for x in tokens]
+            return [self._stoi.get(x, self._stoi["<unk>"]) for x in tokens]
 
     def _tokenize_str(self, text: str):
         text = re.sub(r"([.!?])", r" \1", text)
-        tokens = [x for x in text.split(' ') if len(x) > 0]
+        tokens = [x for x in text.split(" ") if len(x) > 0]
         return tokens
 
     def _get_tokens(self, text: List[str]):
-        for t in tqdm(text, total=len(text), desc='Getting tokens'):
+        for t in tqdm(text, total=len(text), desc="Getting tokens"):
             yield self._tokenize_str(text=t)
 
     def _get_transform(self, max_len: int, truncate: bool = True):
@@ -78,23 +75,23 @@ class NaiveTokenizer:
 
         transforms += [
             T.VocabTransform(vocab=self._vocab),
-            T.AddToken(self._vocab['<eos>'], begin=False),
-            T.ToTensor()
+            T.AddToken(self._vocab["<eos>"], begin=False),
+            T.ToTensor(),
         ]
         text_tranform = T.Sequential(*transforms)
         return text_tranform
 
     @property
     def pad_token(self):
-        return '<pad>'
+        return "<pad>"
 
     @property
     def eos_token(self):
-        return '<eos>'
+        return "<eos>"
 
     @property
     def unk_token(self):
-        return '<unk>'
+        return "<unk>"
 
     @property
     def pad_token_id(self):

@@ -9,7 +9,7 @@ class DataSplitter:
         self._rng = rng
 
     def split(self):
-        print(f'{self._n_examples} pairs')
+        print(f"{self._n_examples} pairs")
 
         idxs = np.arange(self._n_examples)
 
@@ -35,14 +35,10 @@ class CollateFunction:
 
         src_batch, target_batch, dataset_name = zip(*batch)
         src_batch_padded = torch.nn.utils.rnn.pad_sequence(
-            src_batch,
-            batch_first=True,
-            padding_value=self._pad_token_id
+            src_batch, batch_first=True, padding_value=self._pad_token_id
         )
         target_batch_padded = torch.nn.utils.rnn.pad_sequence(
-            target_batch,
-            batch_first=True,
-            padding_value=self._pad_token_id
+            target_batch, batch_first=True, padding_value=self._pad_token_id
         )
 
         return src_batch_padded, target_batch_padded, dataset_name, src_lengths

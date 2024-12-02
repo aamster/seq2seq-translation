@@ -12,7 +12,8 @@ dependencies = [
     "wandb",
     "torchmetrics",
     "evaluate",
-    "datasets"
+    "datasets",
+    "loguru"
 ]
 
 [tool.setuptools.packages.find]
