@@ -471,10 +471,11 @@ def train(
     decay_learning_rate: bool = True,
     eval_interval: int = 2000,
     eval_iters: int = 200,
+    label_smoothing: float = 0.0
 ):
     os.makedirs(model_weights_out_dir, exist_ok=True)
 
-    criterion = nn.CrossEntropyLoss(ignore_index=target_tokenizer.processor.pad_id())
+    criterion = nn.CrossEntropyLoss(ignore_index=target_tokenizer.processor.pad_id(), label_smoothing=label_smoothing)
 
     best_bleu_score = -float("inf")
 

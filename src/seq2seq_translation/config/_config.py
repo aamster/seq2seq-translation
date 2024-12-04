@@ -45,3 +45,4 @@ class Config(BaseModel):
     attention_dim: int = 64
     use_wandb: bool = False
     wandb_api_key: Optional[str] = None
+    label_smoothing: float = 0.0
