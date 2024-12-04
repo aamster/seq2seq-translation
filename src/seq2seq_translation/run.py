@@ -89,15 +89,12 @@ def main(config: RNNConfig | TransformerConfig):
         ):
             wandb.login()
 
-            signature = inspect.signature(main).parameters.keys()
-
             wandb.init(
                 project="seq2seq_translation",
                 config={
                     k: v
-                    for k, v in locals().items()
-                    if k in signature
-                    and k
+                    for k, v in config.model_dump()
+                    if k
                     not in (
                         "data_path",
                         "model_weights_out_dir",
