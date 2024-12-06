@@ -220,7 +220,7 @@ class _DecoderBlock(nn.Module):
                 dropout=dropout,
                 qkv_dim=qkv_dim,
             )
-            layer_norms.append(LayerNorm(n_embd))
+
         self.mlp = MLP(
             n_embd=n_embd, dropout=dropout, hidden_dim=feedforward_hidden_dim
         )
