@@ -508,3 +508,17 @@ class EncoderDecoderTransformer(nn.Module):
                 break
         logits = torch.cat(all_logits, dim=1)
         return generated_tokens, logits
+
+    @property
+    def num_params(self, non_embedding: bool = True):
+        """
+        Return the number of parameters in the model.
+        For non-embedding count (default), the position embeddings get subtracted.
+        The token embeddings would too, except due to the parameter sharing these
+        params are actually used as weights in the final layer, so we include them.
+        """
+        n_params = sum(p.numel() for p in self.parameters())
+        if non_embedding:
+            n_params -= self.encoder.positional_encoding.weight.numel()
+            n_params -= self.decoder.positional_encoding.weight.numel()
+        return n_params
