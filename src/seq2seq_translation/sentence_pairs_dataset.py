@@ -48,7 +48,7 @@ class SentencePairsDataset(Dataset):
 
         def transform(x):
             if max_len is not None:
-                x = x[:max_len]
+                x = x[:max_len-1] # -1 so that the length is equal after adding bos token
 
             x.append(self._source_tokenizer.processor.eos_id())
             x = torch.tensor(x)
