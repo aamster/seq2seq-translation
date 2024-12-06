@@ -299,14 +299,14 @@ def main(config: RNNConfig | TransformerConfig):
                 )
 
             optimizer.load_state_dict(checkpoint["optimizer"])
-
-        if config.use_ddp:
-            model = DDP(model, device_ids=[distributed_context.ddp_local_rank])
-
+            
         if config.compile:
             # requires PyTorch 2.0
             print("compiling the model... (takes a ~minute)")
             model = torch.compile(model)
+
+        if config.use_ddp:
+            model = DDP(model, device_ids=[distributed_context.ddp_local_rank])
 
         ctx = (
             torch.amp.autocast(device_type=device.type, dtype=torch.float16)
