@@ -93,7 +93,7 @@ def main(config: RNNConfig | TransformerConfig):
                 project="seq2seq_translation",
                 config={
                     k: v
-                    for k, v in config.model_dump()
+                    for k, v in config.model_dump().items()
                     if k
                     not in (
                         "data_path",

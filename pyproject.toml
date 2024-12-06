@@ -13,7 +13,8 @@ dependencies = [
     "torchmetrics",
     "evaluate",
     "datasets",
-    "loguru"
+    "loguru",
+    "pydantic"
 ]
 
 [tool.setuptools.packages.find]
