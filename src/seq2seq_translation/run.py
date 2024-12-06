@@ -12,6 +12,7 @@ import numpy as np
 import pandas as pd
 import torch
 import wandb
+from loguru import logger
 from torch import optim
 from torch.distributed.elastic.multiprocessing.errors import record
 from torch.utils.data import DataLoader, DistributedSampler
@@ -42,17 +43,6 @@ from seq2seq_translation.utils.ddp_utils import (
     SingleProcessContextManager,
 )
 from torch.nn.parallel import DistributedDataParallel as DDP
-
-
-logging.basicConfig(
-    format="%(asctime)s - %(levelname)s - %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S",
-    handlers=[logging.StreamHandler(sys.stdout)],
-)
-
-logging.getLogger().setLevel(logging.INFO)
-
-logger = logging.getLogger(__name__)
 
 
 def _remove_module_from_state_dict(state_dict: dict):
@@ -299,10 +289,10 @@ def main(config: RNNConfig | TransformerConfig):
                 )
 
             optimizer.load_state_dict(checkpoint["optimizer"])
-            
+
         if config.compile:
             # requires PyTorch 2.0
-            print("compiling the model... (takes a ~minute)")
+            logger.info("compiling the model... (takes a ~minute)")
             model = torch.compile(model)
 
         if config.use_ddp:
