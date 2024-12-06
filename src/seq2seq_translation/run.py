@@ -292,7 +292,7 @@ def main(config: RNNConfig | TransformerConfig):
 
         if hasattr(model, 'num_params'):
             logger.info(f'Model num params: {model.num_params / 1e6}M')
-            
+
         if config.compile:
             # requires PyTorch 2.0
             logger.info("compiling the model... (takes a ~minute)")

@@ -390,6 +390,9 @@ def inference(
             _, topi = probs.topk(1)
             decoded_ids = topi.squeeze()
         else:
+            if isinstance(model, torch.nn.parallel.DistributedDataParallel):
+                model = model.module
+                
             decoded_ids, logits = model.generate(x=input_tensor, top_k=1)
         decoder_hidden, decoder_attn = None, None
 
