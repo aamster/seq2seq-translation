@@ -470,7 +470,7 @@ class EncoderDecoderTransformer(nn.Module):
         batch_size = x.shape[0]
         generated_tokens = torch.full(
             (batch_size, 1), self._sos_token_id, dtype=torch.long
-        )
+        ).to(encoder_out.device)
 
         all_logits = []
         for _ in range(max_new_tokens):
