@@ -279,7 +279,7 @@ def main(config: RNNConfig | TransformerConfig):
                 sos_token_id=target_tokenizer.processor.bos_id(),
                 eos_token_id=target_tokenizer.processor.eos_id(),
                 pad_token_id=source_tokenizer.processor.pad_id(),
-            )
+            ).to(device)
 
         optimizer = optim.AdamW(
             model.parameters(),
