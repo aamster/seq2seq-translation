@@ -34,43 +34,51 @@ class MultiHeadAttention(nn.Module):
         raise NotImplementedError
 
     def _calc_attention(
-        self,
-        q: torch.tensor,
-        k: torch.tensor,
-        v: torch.tensor,
-        B: int,
-        T_q: int,
-        T_k: int,
-        query_pad_mask: Optional[torch.tensor] = None,
-        key_pad_mask: Optional[torch.tensor] = None,
+            self,
+            q: torch.tensor,
+            k: torch.tensor,
+            v: torch.tensor,
+            B: int,
+            T_q: int,
+            T_k: int,
+            key_pad_mask: Optional[torch.tensor] = None,
     ):
         # Reshape and split into heads
         q = q.view(B, T_q, self.n_head, self.qkv_dim // self.n_head).transpose(1, 2)
         k = k.view(B, T_k, self.n_head, self.qkv_dim // self.n_head).transpose(1, 2)
         v = v.view(B, T_k, self.n_head, self.qkv_dim // self.n_head).transpose(1, 2)
 
-        if key_pad_mask is not None:
-            key_pad_mask = key_pad_mask.unsqueeze(1).unsqueeze(-1)  # (B, 1, T_k, 1)
-            k = k.masked_fill(~key_pad_mask, 0)
-            v = v.masked_fill(~key_pad_mask, 0)
+        # Create key padding mask (shape: B, 1, 1, T_k)
+        key_pad_mask = key_pad_mask.unsqueeze(1).unsqueeze(1)
+
+        # Create causal mask (shape: 1, 1, T_q, T_k)
+        if self.is_causal:
+            causal_mask = torch.tril(torch.ones(T_q, T_k, dtype=torch.bool, device=q.device))
+            causal_mask = causal_mask.unsqueeze(0).unsqueeze(0)  # Shape: (1, 1, T_q, T_k)
+        else:
+            causal_mask = torch.ones(T_q, T_k, dtype=torch.bool, device=q.device).unsqueeze(
+                0).unsqueeze(0)
+
+        combined_mask = key_pad_mask & causal_mask  # Shape: (B, 1, T_q, T_k)
+
+        attn_mask = torch.where(
+            combined_mask,
+            torch.tensor(0.0, device=q.device),
+            torch.tensor(float('-inf'), device=q.device)
+        )
 
         y = torch.nn.functional.scaled_dot_product_attention(
             q,
             k,
             v,
-            attn_mask=None,
-            is_causal=self.is_causal,
+            attn_mask=attn_mask,
             dropout_p=self.dropout if self.training else 0,
         )
 
-        if query_pad_mask is not None:
-            query_pad_mask = query_pad_mask.unsqueeze(1).unsqueeze(-1)  # (B, 1, T_q, 1)
-            y = y.masked_fill(~query_pad_mask, 0)
-
-        # re-assemble all head outputs side by side
+        # Re-assemble all head outputs side by side
         y = y.transpose(1, 2).contiguous().view(B, T_q, self.qkv_dim)
 
-        # output projection
+        # Output projection
         y = self.proj_dropout(self.c_proj(y))
 
         return y
@@ -101,7 +109,7 @@ class MultiHeadSelfAttention(MultiHeadAttention):
         q, k, v = self.c_attn(x).split(self.qkv_dim, dim=2)
 
         y = self._calc_attention(
-            q=q, k=k, v=v, B=B, T_q=T, T_k=T, query_pad_mask=pad_mask, key_pad_mask=pad_mask
+            q=q, k=k, v=v, B=B, T_q=T, T_k=T, key_pad_mask=pad_mask
         )
 
         return y
@@ -122,7 +130,6 @@ class MultiHeadCrossAttention(MultiHeadAttention):
         query: torch.tensor,
         key: torch.tensor,
         key_pad_mask: torch.tensor,
-        query_pad_mask: torch.tensor,
     ):
         B, T_query, C = query.size()
         _, T_key, _ = key.size()
@@ -141,7 +148,6 @@ class MultiHeadCrossAttention(MultiHeadAttention):
             B=B,
             T_q=T_query,
             T_k=T_key,
-            query_pad_mask=query_pad_mask,
             key_pad_mask=key_pad_mask,
         )
         return y
@@ -244,7 +250,6 @@ class _DecoderBlock(nn.Module):
             x = x + self.multi_head_cross_attention(
                 query=self.layer_norm[1](x),
                 key=self.layer_norm[2](encoder_out),
-                query_pad_mask=query_pad_mask,
                 key_pad_mask=key_pad_mask,
             )
         x = x + self.mlp(self.layer_norm[3 if self._use_cross_attention else 1](x))
