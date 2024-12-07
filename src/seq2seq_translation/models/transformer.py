@@ -460,7 +460,6 @@ class EncoderDecoderTransformer(nn.Module):
     def generate(
         self,
         x: torch.tensor,
-        max_new_tokens: int = 500,
         temperature: float = 1.0,
         top_k: Optional[int] = None,
     ):
@@ -471,6 +470,9 @@ class EncoderDecoderTransformer(nn.Module):
         generated_tokens = torch.full(
             (batch_size, 1), self._sos_token_id, dtype=torch.long
         ).to(encoder_out.device)
+
+        input_len = x.shape[1]
+        max_new_tokens = input_len + 50 # from "Attention is all you need"
 
         all_logits = []
         for _ in range(max_new_tokens):
