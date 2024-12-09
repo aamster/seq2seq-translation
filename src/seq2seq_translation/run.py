@@ -1,8 +1,5 @@
-import inspect
 import json
-import logging
 import os
-import sys
 from argparse import ArgumentParser
 from collections import OrderedDict
 from contextlib import nullcontext
@@ -14,7 +11,6 @@ import torch
 import wandb
 from loguru import logger
 from torch import optim
-from torch.distributed.elastic.multiprocessing.errors import record
 from torch.utils.data import DataLoader, DistributedSampler
 
 from seq2seq_translation.config._config import ModelType
@@ -60,7 +56,6 @@ def _remove_module_from_state_dict(state_dict: dict):
     return new_state_dict
 
 
-@record
 def main(config: RNNConfig | TransformerConfig):
     if not config.evaluate_only and config.weights_out_dir is None:
         raise ValueError("must provide model_weights_out_dir")
@@ -262,10 +257,9 @@ def main(config: RNNConfig | TransformerConfig):
                 n_attention_heads=config.n_head,
                 n_layers=config.num_layers,
                 vocab_size=target_tokenizer.processor.vocab_size(),
-                n_embd=config.embedding_size,
+                d_model=config.d_model,
                 block_size=config.max_input_length,
                 feedforward_hidden_dim=config.feedforward_hidden_dim,
-                qkv_dim=config.attention_dim,
                 sos_token_id=target_tokenizer.processor.bos_id(),
                 eos_token_id=target_tokenizer.processor.eos_id(),
                 pad_token_id=source_tokenizer.processor.pad_id(),
@@ -357,6 +351,12 @@ def main(config: RNNConfig | TransformerConfig):
                 )
 
 
+def _record(main_func, config):
+    if config.use_ddp:
+        from torch.distributed.elastic.multiprocessing.errors import record
+        return record(main_func)
+    return main_func
+
 if __name__ == "__main__":
     parser = ArgumentParser()
     parser.add_argument("--config_path", required=True)
@@ -377,4 +377,6 @@ if __name__ == "__main__":
         if config.wandb_api_key is None:
             raise ValueError("Must provide wandb_api_key")
         os.environ["WANDB_API_KEY"] = config.wandb_api_key
+
+    main = _record(main_func=main, config=config)
     main(config=config)

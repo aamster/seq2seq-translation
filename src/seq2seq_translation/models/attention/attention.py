@@ -1,5 +1,6 @@
 import math
 from enum import Enum
+from typing import Optional
 
 import torch
 from torch import nn

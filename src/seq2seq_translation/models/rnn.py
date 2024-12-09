@@ -1,4 +1,3 @@
-import abc
 import os
 from typing import Optional
 
@@ -6,7 +5,7 @@ import torch
 from torch import nn
 import torch.nn.functional as F
 
-from seq2seq_translation.models.attention import (
+from seq2seq_translation.models.attention.attention import (
     BahdanauAttention,
     AttentionType,
     CosineSimilarityAttention,

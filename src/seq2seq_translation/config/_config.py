@@ -18,7 +18,7 @@ class Config(BaseModel):
     n_epochs: Optional[int] = None
     weights_out_dir: Optional[Path] = None
     limit: Optional[int] = None
-    max_input_length: int = 1024
+    max_input_length: int = 128
     learning_rate: float = 6e-4
     seed: Optional[int] = None
     load_from_checkpoint_path: Optional[Path] = None
@@ -28,7 +28,6 @@ class Config(BaseModel):
     target_lang: str = "fr"
     train_frac: float = 0.8
     git_commit: Optional[str] = None
-    embedding_size: int = 128
     dropout: float = 0.0
     weight_decay: float = 0.0
     compile: bool = False
@@ -37,12 +36,11 @@ class Config(BaseModel):
     eval_iters: int = 200
     eval_out_path: Optional[Path] = None
     is_test: bool = False
-    decoder_num_timesteps: int = 10000
+    decoder_num_timesteps: int = 80
     use_ddp: bool = False
     num_train_dataloader_num_workers: int = 0
     eval_sequence_generator_type: str = "beam search"
     num_layers: int = 1
-    attention_dim: int = 64
     use_wandb: bool = False
     wandb_api_key: Optional[str] = None
     label_smoothing: float = 0.0

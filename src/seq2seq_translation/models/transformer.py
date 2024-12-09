@@ -6,160 +6,16 @@ import torch.nn as nn
 from torch.nn import LayerNorm
 import torch.nn.functional as F
 
-
-class MultiHeadAttention(nn.Module):
-    def __init__(
-        self,
-        n_embd: int,
-        qkv_dim: int,
-        n_head: int,
-        is_causal: bool,
-        dropout: float = 0.0,
-    ):
-        super().__init__()
-        assert n_embd % n_head == 0
-        self.c_attn = nn.Linear(n_embd, 3 * qkv_dim)
-        # output projection
-        self.c_proj = nn.Linear(qkv_dim, n_embd)
-        # regularization
-        self.attn_dropout = nn.Dropout(dropout)
-        self.proj_dropout = nn.Dropout(dropout)
-        self.n_head = n_head
-        self.n_embd = n_embd
-        self.dropout = dropout
-        self.is_causal = is_causal
-        self.qkv_dim = qkv_dim
-
-    def forward(self, **kwargs):
-        raise NotImplementedError
-
-    def _calc_attention(
-            self,
-            q: torch.tensor,
-            k: torch.tensor,
-            v: torch.tensor,
-            B: int,
-            T_q: int,
-            T_k: int,
-            key_pad_mask: Optional[torch.tensor] = None,
-    ):
-        # Reshape and split into heads
-        q = q.view(B, T_q, self.n_head, self.qkv_dim // self.n_head).transpose(1, 2)
-        k = k.view(B, T_k, self.n_head, self.qkv_dim // self.n_head).transpose(1, 2)
-        v = v.view(B, T_k, self.n_head, self.qkv_dim // self.n_head).transpose(1, 2)
-
-        # Create key padding mask (shape: B, 1, 1, T_k)
-        key_pad_mask = key_pad_mask.unsqueeze(1).unsqueeze(1)
-
-        # Create causal mask (shape: 1, 1, T_q, T_k)
-        if self.is_causal:
-            causal_mask = torch.tril(torch.ones(T_q, T_k, dtype=torch.bool, device=q.device))
-            causal_mask = causal_mask.unsqueeze(0).unsqueeze(0)  # Shape: (1, 1, T_q, T_k)
-        else:
-            causal_mask = torch.ones(T_q, T_k, dtype=torch.bool, device=q.device).unsqueeze(
-                0).unsqueeze(0)
-
-        combined_mask = key_pad_mask & causal_mask  # Shape: (B, 1, T_q, T_k)
-
-        attn_mask = torch.where(
-            combined_mask,
-            torch.tensor(0.0, device=q.device),
-            torch.tensor(float('-inf'), device=q.device)
-        )
-
-        y = torch.nn.functional.scaled_dot_product_attention(
-            q,
-            k,
-            v,
-            attn_mask=attn_mask,
-            dropout_p=self.dropout if self.training else 0,
-        )
-
-        # Re-assemble all head outputs side by side
-        y = y.transpose(1, 2).contiguous().view(B, T_q, self.qkv_dim)
-
-        # Output projection
-        y = self.proj_dropout(self.c_proj(y))
-
-        return y
-
-
-class MultiHeadSelfAttention(MultiHeadAttention):
-    def __init__(
-        self,
-        n_embd: int,
-        qkv_dim: int,
-        n_head: int,
-        is_causal: bool,
-        dropout: float = 0.0,
-    ):
-        super().__init__(
-            n_head=n_head,
-            qkv_dim=qkv_dim,
-            n_embd=n_embd,
-            is_causal=is_causal,
-            dropout=dropout,
-        )
-
-    def forward(self, x: torch.tensor, pad_mask: torch.tensor):
-        B, T, C = x.size()
-
-        # calculates q, k, v in a single operation rather than in 3 separate operations for
-        # efficiency but is equivalent
-        q, k, v = self.c_attn(x).split(self.qkv_dim, dim=2)
-
-        y = self._calc_attention(
-            q=q, k=k, v=v, B=B, T_q=T, T_k=T, key_pad_mask=pad_mask
-        )
-
-        return y
-
-
-class MultiHeadCrossAttention(MultiHeadAttention):
-    def __init__(self, n_embd: int, qkv_dim, n_head: int, dropout: float = 0.0):
-        super().__init__(
-            n_head=n_head,
-            qkv_dim=qkv_dim,
-            n_embd=n_embd,
-            is_causal=False,
-            dropout=dropout,
-        )
-
-    def forward(
-        self,
-        query: torch.tensor,
-        key: torch.tensor,
-        key_pad_mask: torch.tensor,
-    ):
-        B, T_query, C = query.size()
-        _, T_key, _ = key.size()
-
-        combined = torch.cat([query, key], dim=1)  # (B, T_query + T_key, n_embd)
-        q, k, v = self.c_attn(combined).split(self.qkv_dim, dim=2)
-
-        q = q[:, :T_query]  # (B, T_query, attention_dim)
-        k = k[:, T_query:]  # (B, T_key, attention_dim)
-        v = v[:, T_query:]  # (B, T_key, attention_dim)
-
-        y = self._calc_attention(
-            q=q,
-            k=k,
-            v=v,
-            B=B,
-            T_q=T_query,
-            T_k=T_key,
-            key_pad_mask=key_pad_mask,
-        )
-        return y
+from seq2seq_translation.models.attention.multi_head_attention import MultiHeadSelfAttention, MultiHeadCrossAttention
 
 
 class MLP(nn.Module):
 
-    def __init__(self, n_embd: int, hidden_dim: int = 2048, dropout: float = 0.0):
+    def __init__(self, d_model: int, hidden_dim: int = 2048, dropout: float = 0.0):
         super().__init__()
-        self.c_fc = nn.Linear(n_embd, hidden_dim)
+        self.c_fc = nn.Linear(d_model, hidden_dim)
         self.gelu = nn.GELU()
-        self.c_proj = nn.Linear(hidden_dim, n_embd)
+        self.c_proj = nn.Linear(hidden_dim, d_model)
         self.dropout = nn.Dropout(dropout)
 
     def forward(self, x):
@@ -173,23 +29,21 @@ class MLP(nn.Module):
 class _EncoderBlock(nn.Module):
     def __init__(
         self,
-        n_embd: int,
-        qkv_dim: int,
+        d_model: int,
         n_attention_heads: int,
         dropout: float = 0.0,
         feedforward_hidden_dim: int = 2048,
     ):
         super().__init__()
-        self.layer_norm = nn.ModuleList([LayerNorm(n_embd) for _ in range(2)])
+        self.layer_norm = nn.ModuleList([LayerNorm(d_model) for _ in range(2)])
         self.multi_head_attention = MultiHeadSelfAttention(
-            n_embd=n_embd,
+            d_model=d_model,
             n_head=n_attention_heads,
             is_causal=False,
             dropout=dropout,
-            qkv_dim=qkv_dim,
         )
         self.mlp = MLP(
-            n_embd=n_embd, dropout=dropout, hidden_dim=feedforward_hidden_dim
+            d_model=d_model, dropout=dropout, hidden_dim=feedforward_hidden_dim
         )
 
     def forward(self, x, pad_mask: torch.tensor):
@@ -201,8 +55,7 @@ class _EncoderBlock(nn.Module):
 class _DecoderBlock(nn.Module):
     def __init__(
         self,
-        n_embd: int,
-        qkv_dim: int,
+        d_model: int,
         n_attention_heads: int,
         dropout: float = 0.0,
         use_cross_attention: bool = True,
@@ -210,25 +63,23 @@ class _DecoderBlock(nn.Module):
     ):
         super().__init__()
         self.masked_multi_head_self_attention = MultiHeadSelfAttention(
-            n_embd=n_embd,
+            d_model=d_model,
             n_head=n_attention_heads,
             is_causal=True,
             dropout=dropout,
-            qkv_dim=qkv_dim,
         )
         layer_norms = [
-            LayerNorm(n_embd) for _ in range(4 if use_cross_attention else 2)
+            LayerNorm(d_model) for _ in range(3 if use_cross_attention else 2)
         ]
         if use_cross_attention:
             self.multi_head_cross_attention = MultiHeadCrossAttention(
-                n_embd=n_embd,
+                d_model=d_model,
                 n_head=n_attention_heads,
                 dropout=dropout,
-                qkv_dim=qkv_dim,
             )
 
         self.mlp = MLP(
-            n_embd=n_embd, dropout=dropout, hidden_dim=feedforward_hidden_dim
+            d_model=d_model, dropout=dropout, hidden_dim=feedforward_hidden_dim
         )
         self.layer_norm = nn.ModuleList(layer_norms)
         self._use_cross_attention = use_cross_attention
@@ -236,46 +87,47 @@ class _DecoderBlock(nn.Module):
     def forward(
         self,
         x: torch.tensor,
-        query_pad_mask: torch.tensor,
-        key_pad_mask: torch.tensor,
+        input_pad_mask: torch.tensor,
+        output_pad_mask: Optional[torch.tensor] = None,
         encoder_out: Optional[torch.tensor] = None,
     ):
         if self._use_cross_attention:
             if encoder_out is None:
                 raise ValueError("must provide encoder_out to use cross attention")
         x = x + self.masked_multi_head_self_attention(
-            self.layer_norm[0](x), pad_mask=query_pad_mask
+            self.layer_norm[0](x), pad_mask=output_pad_mask
         )
         if self._use_cross_attention:
             x = x + self.multi_head_cross_attention(
                 query=self.layer_norm[1](x),
-                key=self.layer_norm[2](encoder_out),
-                key_pad_mask=key_pad_mask,
+                key=encoder_out,
+                query_pad_mask=output_pad_mask,
+                key_pad_mask=input_pad_mask,
             )
-        x = x + self.mlp(self.layer_norm[3 if self._use_cross_attention else 1](x))
+        x = x + self.mlp(self.layer_norm[2 if self._use_cross_attention else 1](x))
         return x
 
 
-class Transformer(nn.Module):
+class _Transformer(nn.Module):
     def __init__(
         self,
         n_attention_heads: int,
         n_layers: int,
         vocab_size: int,
-        n_embd: int,
+        d_model: int,
         block_size: int,
         dropout: float = 0.0,
     ):
         super().__init__()
         self._vocab_size = vocab_size
         self._block_size = block_size
-        self._n_embd = n_embd
+        self._d_model = d_model
         self._dropout = dropout
         self._n_attention_heads = n_attention_heads
         self._n_layers = n_layers
 
-        self.embedding = nn.Embedding(self._vocab_size, self._n_embd)
-        self.positional_encoding = nn.Embedding(self._block_size, self._n_embd)
+        self.embedding = nn.Embedding(self._vocab_size, self._d_model)
+        self.positional_encoding = nn.Embedding(self._block_size, self._d_model)
         self.dropout = nn.Dropout(self._dropout)
 
     def _calc_embeddings(self, x: torch.tensor):
@@ -286,28 +138,27 @@ class Transformer(nn.Module):
         ), f"Cannot forward sequence of length {t}, block size is only {self._block_size}"
         pos = torch.arange(0, t, dtype=torch.long, device=device)  # shape (t)
 
-        tok_emb = self.embedding(x)  # token embeddings of shape (b, t, n_embd)
-        pos_emb = self.positional_encoding(pos)  # (t, n_embd)
+        tok_emb = self.embedding(x)  # token embeddings of shape (b, t, d_model)
+        pos_emb = self.positional_encoding(pos)  # (t, d_model)
         x = self.dropout(tok_emb + pos_emb)
         return x
 
 
-class EncoderTransformer(Transformer):
+class EncoderTransformer(_Transformer):
     def __init__(
         self,
         n_attention_heads: int,
         n_layers: int,
         vocab_size: int,
-        n_embd: int,
+        d_model: int,
         block_size: int,
         dropout: float = 0.0,
         feedforward_hidden_dim: int = 2048,
-        qkv_dim: int = 64,
     ):
         super().__init__(
             n_attention_heads=n_attention_heads,
             n_layers=n_layers,
-            n_embd=n_embd,
+            d_model=d_model,
             vocab_size=vocab_size,
             block_size=block_size,
             dropout=dropout,
@@ -315,11 +166,10 @@ class EncoderTransformer(Transformer):
         self.multi_head_attention = nn.ModuleList(
             [
                 _EncoderBlock(
-                    n_embd=n_embd,
+                    d_model=d_model,
                     n_attention_heads=n_attention_heads,
                     dropout=dropout,
                     feedforward_hidden_dim=feedforward_hidden_dim,
-                    qkv_dim=qkv_dim,
                 )
                 for _ in range(n_layers)
             ]
@@ -332,24 +182,23 @@ class EncoderTransformer(Transformer):
         return x
 
 
-class DecoderTransformer(Transformer):
+class DecoderTransformer(_Transformer):
     def __init__(
         self,
         n_attention_heads: int,
         n_layers: int,
         vocab_size: int,
-        n_embd: int,
+        d_model: int,
         block_size: int,
         dropout: float = 0.0,
         use_cross_attention: bool = True,
         feedforward_hidden_dim: int = 2048,
-        qkv_dim: int = 64,
     ):
         super().__init__(
             n_attention_heads=n_attention_heads,
             n_layers=n_layers,
             vocab_size=vocab_size,
-            n_embd=n_embd,
+            d_model=d_model,
             block_size=block_size,
             dropout=dropout,
         )
@@ -357,28 +206,27 @@ class DecoderTransformer(Transformer):
         self.blocks = nn.ModuleList(
             [
                 _DecoderBlock(
-                    n_embd=n_embd,
+                    d_model=d_model,
                     n_attention_heads=n_attention_heads,
                     dropout=dropout,
                     use_cross_attention=use_cross_attention,
                     feedforward_hidden_dim=feedforward_hidden_dim,
-                    qkv_dim=qkv_dim,
                 )
                 for _ in range(n_layers)
             ]
         )
-        self.lm_head = nn.Linear(self._n_embd, self._vocab_size, bias=False)
+        self.lm_head = nn.Linear(self._d_model, self._vocab_size, bias=False)
 
         # https://paperswithcode.com/method/weight-tying
         self.embedding.weight = self.lm_head.weight
 
-        self.layer_norm = LayerNorm(self._n_embd)
+        self.layer_norm = LayerNorm(self._d_model)
 
     def forward(
         self,
         x: torch.tensor,
-        query_pad_mask: torch.tensor,
-        key_pad_mask: torch.tensor,
+        input_pad_mask: torch.tensor,
+        output_pad_mask: Optional[torch.tensor] = None,
         encoder_out: Optional[torch.tensor] = None,
     ):
         if self._use_cross_attention and encoder_out is None:
@@ -389,8 +237,8 @@ class DecoderTransformer(Transformer):
             x = block(
                 x=x,
                 encoder_out=encoder_out,
-                query_pad_mask=query_pad_mask,
-                key_pad_mask=key_pad_mask,
+                input_pad_mask=input_pad_mask,
+                output_pad_mask=output_pad_mask,
             )
         x = self.layer_norm(x)
         logits = self.lm_head(x)
@@ -403,37 +251,34 @@ class EncoderDecoderTransformer(nn.Module):
         n_attention_heads: int,
         n_layers: int,
         vocab_size: int,
-        n_embd: int,
+        d_model: int,
         block_size: int,
         sos_token_id: int,
         eos_token_id: int,
         pad_token_id: int,
         dropout: float = 0.0,
         feedforward_hidden_dim: int = 2048,
-        qkv_dim: int = 64,
     ):
         super().__init__()
 
         self.encoder = EncoderTransformer(
             n_layers=n_layers,
-            n_embd=n_embd,
+            d_model=d_model,
             n_attention_heads=n_attention_heads,
             vocab_size=vocab_size,
             block_size=block_size,
             dropout=dropout,
             feedforward_hidden_dim=feedforward_hidden_dim,
-            qkv_dim=qkv_dim,
         )
         self.decoder = DecoderTransformer(
             n_layers=n_layers,
-            n_embd=n_embd,
+            d_model=d_model,
             n_attention_heads=n_attention_heads,
             vocab_size=vocab_size,
             block_size=block_size,
             dropout=dropout,
             use_cross_attention=True,
             feedforward_hidden_dim=feedforward_hidden_dim,
-            qkv_dim=qkv_dim,
         )
         self._block_size = block_size
         self._sos_token_id = sos_token_id
@@ -456,8 +301,8 @@ class EncoderDecoderTransformer(nn.Module):
         logits = self.decoder(
             x=targets,
             encoder_out=encoder_out,
-            query_pad_mask=output_pad_mask,
-            key_pad_mask=input_pad_mask,
+            input_pad_mask=input_pad_mask,
+            output_pad_mask=output_pad_mask,
         )
         return logits
 
@@ -467,6 +312,7 @@ class EncoderDecoderTransformer(nn.Module):
         x: torch.tensor,
         temperature: float = 1.0,
         top_k: Optional[int] = None,
+        max_new_tokens: Optional[int] = None
     ):
         input_pad_mask = (x != self._pad_token_id).bool()
 
@@ -477,7 +323,8 @@ class EncoderDecoderTransformer(nn.Module):
         ).to(encoder_out.device)
 
         input_len = x.shape[1]
-        max_new_tokens = input_len + 50 # from "Attention is all you need"
+        if max_new_tokens is None:
+            max_new_tokens = input_len + 50 # from "Attention is all you need"
 
         all_logits = []
         for _ in range(max_new_tokens):
@@ -487,14 +334,11 @@ class EncoderDecoderTransformer(nn.Module):
             else:
                 generated_tokens_cropped = generated_tokens[:, -self._block_size :]
 
-            output_pad_mask = (generated_tokens_cropped != self._pad_token_id).bool()
-
             # forward the model to get the logits for the index in the sequence
             logits = self.decoder(
                 x=generated_tokens_cropped,
                 encoder_out=encoder_out,
-                query_pad_mask=output_pad_mask,
-                key_pad_mask=input_pad_mask,
+                input_pad_mask=input_pad_mask,
             )
             # pluck the logits at the final step and scale by desired temperature
             logits = logits[:, -1, :] / temperature

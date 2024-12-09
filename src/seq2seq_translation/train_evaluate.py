@@ -322,10 +322,12 @@ def train_epoch(
             (0, 0, 0, max(0, target_tensor.shape[1] - logits.shape[1])),
             value=train_data_loader.dataset.target_tokenizer.processor.pad_id(),
         )
+
         loss = criterion(
             logits.reshape(batch_size * T, C),
             target_tensor.view(batch_size * T),
         )
+
         prog_bar.set_postfix_str(f"Iter num {global_iter_num}: loss {loss.item():.4f}")
         prog_bar.update()
 
