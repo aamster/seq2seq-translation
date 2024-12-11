@@ -11,7 +11,7 @@ from seq2seq_translation.models.rnn import (
     AttnDecoderRNN,
     EncoderDecoderRNN,
 )
-from seq2seq_translation.models.transformer import EncoderDecoderTransformer
+from seq2seq_translation.models.transformer.encoder_decoder import EncoderDecoderTransformer
 from seq2seq_translation.tokenization.sentencepiece_tokenizer import (
     SentencePieceTokenizer,
 )

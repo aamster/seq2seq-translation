@@ -22,7 +22,7 @@ from seq2seq_translation.inference import (
     BeamSearchSequenceGenerator,
     GreedySequenceGenerator,
 )
-from seq2seq_translation.models.transformer import EncoderDecoderTransformer
+from seq2seq_translation.models.transformer.encoder_decoder import EncoderDecoderTransformer
 from seq2seq_translation.sentence_pairs_dataset import SentencePairsDataset
 from seq2seq_translation.tokenization.sentencepiece_tokenizer import (
     SentencePieceTokenizer,
