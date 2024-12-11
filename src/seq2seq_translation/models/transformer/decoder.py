@@ -2,7 +2,7 @@ from typing import Optional
 
 import torch
 from torch import nn
-from torch.nn import LayerNorm
+from torch.nn import LayerNorm, MultiheadAttention, Transformer
 
 from seq2seq_translation.models.transformer.multi_head_attention import MultiHeadSelfAttention, \
     MultiHeadCrossAttention
@@ -20,20 +20,34 @@ class _DecoderBlock(nn.Module):
         feedforward_hidden_dim: int = 2048,
     ):
         super().__init__()
-        self.masked_multi_head_self_attention = MultiHeadSelfAttention(
-            d_model=d_model,
-            n_head=n_attention_heads,
-            is_causal=True,
+        # self.masked_multi_head_self_attention = MultiHeadSelfAttention(
+        #     d_model=d_model,
+        #     n_head=n_attention_heads,
+        #     is_causal=True,
+        #     dropout=dropout,
+        # )
+        self.masked_multi_head_self_attention = MultiheadAttention(
+            embed_dim=d_model,
+            num_heads=n_attention_heads,
             dropout=dropout,
+            bias=False,
+            batch_first=True
         )
         layer_norms = [
             LayerNorm(d_model) for _ in range(4 if use_cross_attention else 2)
         ]
         if use_cross_attention:
-            self.multi_head_cross_attention = MultiHeadCrossAttention(
-                d_model=d_model,
-                n_head=n_attention_heads,
+            # self.multi_head_cross_attention = MultiHeadCrossAttention(
+            #     d_model=d_model,
+            #     n_head=n_attention_heads,
+            #     dropout=dropout,
+            # )
+            self.multi_head_cross_attention = MultiheadAttention(
+                embed_dim=d_model,
+                num_heads=n_attention_heads,
                 dropout=dropout,
+                bias=False,
+                batch_first=True
             )
 
         self.mlp = MLP(
@@ -48,20 +62,40 @@ class _DecoderBlock(nn.Module):
         input_pad_mask: torch.tensor,
         output_pad_mask: Optional[torch.tensor] = None,
         encoder_out: Optional[torch.tensor] = None,
+        need_attn_weights: bool = False
     ):
         if self._use_cross_attention:
             if encoder_out is None:
                 raise ValueError("must provide encoder_out to use cross attention")
-        x = x + self.masked_multi_head_self_attention(
-            self.layer_norm[0](x), pad_mask=output_pad_mask
+        # x = x + self.masked_multi_head_self_attention(
+        #     self.layer_norm[0](x), pad_mask=output_pad_mask
+        # )
+        x = self.layer_norm[0](x)
+        causal_mask = Transformer.generate_square_subsequent_mask(
+            sz=x.shape[1],
+            device=x.device,
+            dtype=x.dtype
         )
+        attn_output, attn_output_weights = self.masked_multi_head_self_attention(
+            query=x, key=x, value=x, is_causal=True,
+            need_weights=need_attn_weights,
+            attn_mask=causal_mask
+        )
+        x = x + attn_output
         if self._use_cross_attention:
-            x = x + self.multi_head_cross_attention(
-                query=self.layer_norm[1](x),
-                key=self.layer_norm[2](encoder_out),
-                query_pad_mask=output_pad_mask,
-                key_pad_mask=input_pad_mask,
+            x = self.layer_norm[1](x)
+            encoder_out = self.layer_norm[2](encoder_out)
+            attn_output, attn_output_weights = self.multi_head_cross_attention(
+                query=x, key=encoder_out, value=encoder_out, key_padding_mask=~input_pad_mask,
+                need_weights=need_attn_weights
             )
+            x = x + attn_output
+            # x = x + self.multi_head_cross_attention(
+            #     query=self.layer_norm[1](x),
+            #     key=self.layer_norm[2](encoder_out),
+            #     query_pad_mask=output_pad_mask,
+            #     key_pad_mask=input_pad_mask,
+            # )
         x = x + self.mlp(self.layer_norm[3 if self._use_cross_attention else 1](x))
         return x
 

@@ -1,6 +1,6 @@
 import torch
 from torch import nn
-from torch.nn import LayerNorm
+from torch.nn import LayerNorm, MultiheadAttention
 
 from seq2seq_translation.models.transformer.multi_head_attention import MultiHeadSelfAttention
 from seq2seq_translation.models.transformer.mlp import MLP
@@ -17,18 +17,30 @@ class _EncoderBlock(nn.Module):
     ):
         super().__init__()
         self.layer_norm = nn.ModuleList([LayerNorm(d_model) for _ in range(2)])
-        self.multi_head_attention = MultiHeadSelfAttention(
-            d_model=d_model,
-            n_head=n_attention_heads,
-            is_causal=False,
+        # self.multi_head_attention = MultiHeadSelfAttention(
+        #     d_model=d_model,
+        #     n_head=n_attention_heads,
+        #     is_causal=False,
+        #     dropout=dropout,
+        # )
+        self.multi_head_attention = MultiheadAttention(
+            embed_dim=d_model,
+            num_heads=n_attention_heads,
             dropout=dropout,
+            bias=False,
+            batch_first=True,
         )
         self.mlp = MLP(
             d_model=d_model, dropout=dropout, hidden_dim=feedforward_hidden_dim
         )
 
-    def forward(self, x, pad_mask: torch.tensor):
-        x = x + self.multi_head_attention(self.layer_norm[0](x), pad_mask=pad_mask)
+    def forward(self, x, pad_mask: torch.tensor, need_attn_weights: bool = False):
+        x = self.layer_norm[0](x)
+        attn_output, attn_output_weights = self.multi_head_attention(
+            query=x, key=x, value=x, key_padding_mask=~pad_mask, need_weights=need_attn_weights,
+        )
+        x = x + attn_output
+        # x = x + self.multi_head_attention(x, pad_mask=pad_mask)
         x = x + self.mlp(self.layer_norm[1](x))
         return x
 
