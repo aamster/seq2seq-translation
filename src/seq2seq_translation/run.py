@@ -11,6 +11,7 @@ import torch
 import wandb
 from loguru import logger
 from torch import optim
+from torch.nn import Transformer
 from torch.utils.data import DataLoader, DistributedSampler
 
 from seq2seq_translation.config._config import ModelType
@@ -22,7 +23,7 @@ from seq2seq_translation.inference import (
     BeamSearchSequenceGenerator,
     GreedySequenceGenerator,
 )
-from seq2seq_translation.models.transformer.encoder_decoder import EncoderDecoderTransformer
+from seq2seq_translation.models.transformer.encoder_decoder import EncoderDecoderTransformer2
 from seq2seq_translation.sentence_pairs_dataset import SentencePairsDataset
 from seq2seq_translation.tokenization.sentencepiece_tokenizer import (
     SentencePieceTokenizer,
@@ -253,7 +254,7 @@ def main(config: RNNConfig | TransformerConfig):
             model = EncoderDecoderRNN(encoder=encoder, decoder=decoder)
         else:
             assert isinstance(config, TransformerConfig), "expected TransformerConfig"
-            model = EncoderDecoderTransformer(
+            model = EncoderDecoderTransformer2(
                 n_attention_heads=config.n_head,
                 n_layers=config.num_layers,
                 vocab_size=target_tokenizer.processor.vocab_size(),
