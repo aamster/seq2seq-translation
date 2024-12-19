@@ -348,7 +348,8 @@ def main(config: RNNConfig | TransformerConfig):
                     decay_learning_rate=config.decay_learning_rate,
                     eval_interval=config.eval_interval,
                     eval_iters=config.eval_iters,
-                    label_smoothing=config.label_smoothing
+                    label_smoothing=config.label_smoothing,
+                    use_mixed_precision=config.use_mixed_precision
                 )
 
 

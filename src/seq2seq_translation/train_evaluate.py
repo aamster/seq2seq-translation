@@ -228,9 +228,9 @@ def train_epoch(
     learning_rate_decay_config: Optional[LearningRateDecayConfig] = None,
     eval_interval: int = 2000,
     eval_iters: int = 200,
+    use_mixed_precision: bool = True
 ):
-    device_type = "cpu" if "cpu" in os.environ["DEVICE"] else "cuda"
-    scaler = torch.cuda.amp.GradScaler(enabled=(device_type == "cuda"))
+    scaler = torch.cuda.amp.GradScaler(enabled=use_mixed_precision)
 
     total_loss = 0
     prog_bar = tqdm(
@@ -476,6 +476,7 @@ def train(
     eval_interval: int = 2000,
     eval_iters: int = 200,
     label_smoothing: float = 0.0,
+    use_mixed_precision: bool = True
 ):
     os.makedirs(model_weights_out_dir, exist_ok=True)
 
@@ -504,6 +505,7 @@ def train(
             model_weights_out_dir=Path(model_weights_out_dir),
             eval_iters=eval_iters,
             eval_interval=eval_interval,
+            use_mixed_precision=use_mixed_precision
         )
 
 
