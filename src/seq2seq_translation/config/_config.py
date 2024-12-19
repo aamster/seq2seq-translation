@@ -44,3 +44,4 @@ class Config(BaseModel):
     use_wandb: bool = False
     wandb_api_key: Optional[str] = None
     label_smoothing: float = 0.0
+    use_mixed_precision: bool = True

@@ -167,7 +167,7 @@ class EncoderDecoderTransformer2(nn.Module):
             activation=activation,
             batch_first=True,
             norm_first=norm_first,
-            bias=True
+            bias=True   # https://github.com/pytorch/pytorch/issues/143293
         )
         self._vocab_size = vocab_size
         self._block_size = block_size
@@ -283,7 +283,7 @@ class EncoderDecoderTransformer2(nn.Module):
                 tgt_is_causal=True
             )
             logits = self.lm_head(decoder_out)
-            
+
             # pluck the logits at the final step and scale by desired temperature
             logits = logits[:, -1, :] / temperature
             # optionally crop the logits to only the top k options

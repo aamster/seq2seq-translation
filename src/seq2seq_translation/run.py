@@ -298,7 +298,7 @@ def main(config: RNNConfig | TransformerConfig):
 
         ctx = (
             torch.amp.autocast(device_type=device.type, dtype=torch.float16)
-            if device.type == "cuda"
+            if device.type == "cuda" and config.use_mixed_precision
             else nullcontext()
         )
         logger.info(f"using ctx {ctx}")

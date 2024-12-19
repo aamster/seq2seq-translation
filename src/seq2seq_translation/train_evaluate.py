@@ -475,7 +475,7 @@ def train(
     decay_learning_rate: bool = True,
     eval_interval: int = 2000,
     eval_iters: int = 200,
-    label_smoothing: float = 0.0
+    label_smoothing: float = 0.0,
 ):
     os.makedirs(model_weights_out_dir, exist_ok=True)
 
