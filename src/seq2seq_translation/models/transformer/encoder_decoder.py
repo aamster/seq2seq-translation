@@ -70,7 +70,6 @@ class EncoderDecoderTransformer(nn.Module):
         )
         return logits
 
-    @torch.no_grad()
     def generate(
         self,
         x: torch.tensor,
@@ -275,6 +274,7 @@ class EncoderDecoderTransformer2(nn.Module):
             tgt_mask = torch.tril(
                 torch.ones(generated_tokens_cropped.shape[1], generated_tokens_cropped.shape[1], device=generated_tokens_cropped.device))
             tgt_mask[tgt_mask == 0] = -float('inf')
+            tgt_mask[tgt_mask == 1] = 0
             decoder_out = self.transformer.decoder(
                 tgt=generated_tokens_cropped,
                 memory=encoder_out,
