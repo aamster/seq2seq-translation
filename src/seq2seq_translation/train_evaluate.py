@@ -207,10 +207,10 @@ def estimate_performance_metrics(
                         )[0].item(),
                     )
                 )
-                logger.info("dataset:", dataset_name)
-                logger.info("input:", decoded_input)
-                logger.info("target:", decoded_target)
-                logger.info("pred:", predicted_target)
+                logger.info(f"dataset: {dataset_name}")
+                logger.info(f"input: {decoded_input}")
+                logger.info(f"target: {decoded_target}")
+                logger.info(f"pred: {predicted_target}")
 
     model.train()
     return out
