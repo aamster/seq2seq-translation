@@ -207,10 +207,10 @@ def estimate_performance_metrics(
                         )[0].item(),
                     )
                 )
-                print("dataset:", dataset_name)
-                print("input:", decoded_input)
-                print("target:", decoded_target)
-                print("pred:", predicted_target)
+                logger.info("dataset:", dataset_name)
+                logger.info("input:", decoded_input)
+                logger.info("target:", decoded_target)
+                logger.info("pred:", predicted_target)
 
     model.train()
     return out
@@ -280,7 +280,7 @@ def train_epoch(
                 )
 
             if is_master_process():
-                print(
+                logger.info(
                     f"step {global_iter_num}: train loss {metrics['train']['loss']:.4f}, "
                     f"train bleu {metrics['train']['bleu_score']:.4f}, "
                     f"val bleu {metrics['val']['bleu_score']:.4f}"
