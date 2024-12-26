@@ -296,7 +296,7 @@ def main(config: RNNConfig | TransformerConfig):
             model = torch.compile(model)
 
         if config.use_ddp:
-            model = DDP(model, device_ids=[distributed_context.ddp_local_rank], find_unused_parameters=True)
+            model = DDP(model, device_ids=[distributed_context.ddp_local_rank])
 
         ctx = (
             torch.amp.autocast(device.type, dtype=torch.float16)
