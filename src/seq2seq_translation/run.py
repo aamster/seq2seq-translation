@@ -303,8 +303,8 @@ def main(config: RNNConfig | TransformerConfig):
         )
         logger.info(f"using ctx {ctx}")
 
-        with ctx:
-            if config.evaluate_only:
+        if config.evaluate_only:
+            with ctx:
                 val_decoded_text, val_targets, val_bleu, val_bleus, input_lengths = (
                     evaluate(
                         model=model,
@@ -320,37 +320,38 @@ def main(config: RNNConfig | TransformerConfig):
                         ),
                     )
                 )
-                print(f"bleu: {val_bleu}")
-                df = pd.DataFrame(
-                    {
-                        "bleu": val_bleus,
-                        "input_length": input_lengths,
-                        "pred": val_decoded_text,
-                        "target": val_targets,
-                    }
-                )
-                df.to_csv(
-                    config.eval_out_path.parent
-                    / f"{config.eval_out_path.stem}_{distributed_context.ddp_local_rank}.csv",
-                    index=False,
-                )
-            else:
-                train(
-                    train_dataloader=train_data_loader,
-                    val_dataloader=val_data_loader,
-                    model=model,
-                    optimizer=optimizer,
-                    model_weights_out_dir=str(config.weights_out_dir),
-                    n_epochs=config.n_epochs,
-                    source_tokenizer=source_tokenizer,
-                    target_tokenizer=target_tokenizer,
-                    learning_rate=config.learning_rate,
-                    decay_learning_rate=config.decay_learning_rate,
-                    eval_interval=config.eval_interval,
-                    eval_iters=config.eval_iters,
-                    label_smoothing=config.label_smoothing,
-                    use_mixed_precision=config.use_mixed_precision
-                )
+            print(f"bleu: {val_bleu}")
+            df = pd.DataFrame(
+                {
+                    "bleu": val_bleus,
+                    "input_length": input_lengths,
+                    "pred": val_decoded_text,
+                    "target": val_targets,
+                }
+            )
+            df.to_csv(
+                config.eval_out_path.parent
+                / f"{config.eval_out_path.stem}_{distributed_context.ddp_local_rank}.csv",
+                index=False,
+            )
+        else:
+            train(
+                train_dataloader=train_data_loader,
+                val_dataloader=val_data_loader,
+                model=model,
+                optimizer=optimizer,
+                model_weights_out_dir=str(config.weights_out_dir),
+                n_epochs=config.n_epochs,
+                source_tokenizer=source_tokenizer,
+                target_tokenizer=target_tokenizer,
+                learning_rate=config.learning_rate,
+                decay_learning_rate=config.decay_learning_rate,
+                eval_interval=config.eval_interval,
+                eval_iters=config.eval_iters,
+                label_smoothing=config.label_smoothing,
+                use_mixed_precision=config.use_mixed_precision,
+                autocast_context=ctx
+            )
 
 
 def _record(main_func, config):

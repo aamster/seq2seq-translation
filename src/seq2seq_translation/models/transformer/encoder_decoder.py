@@ -1,5 +1,6 @@
 import os
-from typing import Optional
+from contextlib import nullcontext
+from typing import Optional, ContextManager
 
 import torch
 from torch import nn as nn
@@ -75,7 +76,7 @@ class EncoderDecoderTransformer(nn.Module):
         x: torch.tensor,
         temperature: float = 1.0,
         top_k: Optional[int] = None,
-        max_new_tokens: Optional[int] = None
+        max_new_tokens: Optional[int] = None,
     ):
         input_pad_mask = (x != self._pad_token_id).bool()
 
@@ -243,7 +244,7 @@ class EncoderDecoderTransformer2(nn.Module):
         x: torch.tensor,
         temperature: float = 1.0,
         top_k: Optional[int] = None,
-        max_new_tokens: Optional[int] = None
+        max_new_tokens: Optional[int] = None,
     ):
         input_pad_mask = (x == self._pad_token_id).float()
         input_pad_mask = torch.masked_fill(input_pad_mask, input_pad_mask == 1, -float('inf'))
@@ -284,7 +285,7 @@ class EncoderDecoderTransformer2(nn.Module):
             )
             logits = self.lm_head(decoder_out)
 
-            # pluck the logits at the final step and scale by desired temperature
+            # pluck the logits at the final timestep and scale by desired temperature
             logits = logits[:, -1, :] / temperature
             # optionally crop the logits to only the top k options
             if top_k is not None:

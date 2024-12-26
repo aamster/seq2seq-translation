@@ -1,8 +1,9 @@
 import math
 import os
+from contextlib import nullcontext
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional, Type
+from typing import Optional, Type, ContextManager
 
 import torch
 import wandb
@@ -228,7 +229,8 @@ def train_epoch(
     learning_rate_decay_config: Optional[LearningRateDecayConfig] = None,
     eval_interval: int = 2000,
     eval_iters: int = 200,
-    use_mixed_precision: bool = True
+    use_mixed_precision: bool = True,
+    autocast_context: ContextManager = nullcontext()
 ):
     scaler = torch.cuda.amp.GradScaler(enabled=use_mixed_precision)
 
@@ -267,14 +269,15 @@ def train_epoch(
         if global_iter_num % eval_interval == 0:
             if is_master_process():
                 logger.info("Calculating performance metrics")
-            metrics = estimate_performance_metrics(
-                train_loader=train_data_loader,
-                val_loader=val_data_loader,
-                criterion=criterion,
-                model=model,
-                eval_iters=eval_iters,
-                epoch=epoch,
-            )
+            with autocast_context:
+                metrics = estimate_performance_metrics(
+                    train_loader=train_data_loader,
+                    val_loader=val_data_loader,
+                    criterion=criterion,
+                    model=model,
+                    eval_iters=eval_iters,
+                    epoch=epoch,
+                )
 
             if is_master_process():
                 print(
@@ -303,30 +306,29 @@ def train_epoch(
                     }
                     torch.save(checkpoint, Path(model_weights_out_dir) / "ckpt.pt")
 
-        optimizer.zero_grad()
+        with autocast_context:
+            if isinstance(model, EncoderDecoderRNN):
+                logits, decoder_hidden, decoder_attn = model(
+                    x=input_tensor, input_lengths=input_lengths, target_tensor=target_tensor
+                )
+            else:
+                logits = model(x=input_tensor, targets=target_tensor)
 
-        if isinstance(model, EncoderDecoderRNN):
-            logits, decoder_hidden, decoder_attn = model(
-                x=input_tensor, input_lengths=input_lengths, target_tensor=target_tensor
+            batch_size = target_tensor.shape[0]
+            C = logits.shape[-1]
+            T = target_tensor.shape[-1]
+
+            # if decoder_outputs shorter than target_tensor, pad it so that shapes match
+            logits = torch.nn.functional.pad(
+                logits,
+                (0, 0, 0, max(0, target_tensor.shape[1] - logits.shape[1])),
+                value=train_data_loader.dataset.target_tokenizer.processor.pad_id(),
             )
-        else:
-            logits = model(x=input_tensor, targets=target_tensor)
 
-        batch_size = target_tensor.shape[0]
-        C = logits.shape[-1]
-        T = target_tensor.shape[-1]
-
-        # if decoder_outputs shorter than target_tensor, pad it so that shapes match
-        logits = torch.nn.functional.pad(
-            logits,
-            (0, 0, 0, max(0, target_tensor.shape[1] - logits.shape[1])),
-            value=train_data_loader.dataset.target_tokenizer.processor.pad_id(),
-        )
-
-        loss = criterion(
-            logits.reshape(batch_size * T, C),
-            target_tensor.view(batch_size * T),
-        )
+            loss = criterion(
+                logits.reshape(batch_size * T, C),
+                target_tensor.view(batch_size * T),
+            )
 
         prog_bar.set_postfix_str(f"Iter num {global_iter_num}: loss {loss.item():.4f}")
         prog_bar.update()
@@ -338,6 +340,7 @@ def train_epoch(
 
         scaler.step(optimizer)
         scaler.update()
+        optimizer.zero_grad()
 
         total_loss += loss.item()
 
@@ -375,7 +378,7 @@ def inference(
     input_tensor: torch.tensor,
     input_lengths: Optional[list[int]] = None,
     target_tensor: Optional[torch.Tensor] = None,
-):
+ ):
     if isinstance(model, EncoderDecoderRNN):
         logits, decoder_hidden, decoder_attn = model(
             x=input_tensor, input_lengths=input_lengths, target_tensor=target_tensor
@@ -385,7 +388,6 @@ def inference(
         decoded_ids = topi.squeeze()
     else:
         if target_tensor is not None:
-            # teacher forcing
             logits = model(x=input_tensor, targets=target_tensor)
             probs = F.softmax(logits, dim=-1)
             _, topi = probs.topk(1)
@@ -476,7 +478,8 @@ def train(
     eval_interval: int = 2000,
     eval_iters: int = 200,
     label_smoothing: float = 0.0,
-    use_mixed_precision: bool = True
+    use_mixed_precision: bool = True,
+    autocast_context: ContextManager = nullcontext()
 ):
     os.makedirs(model_weights_out_dir, exist_ok=True)
 
@@ -505,7 +508,8 @@ def train(
             model_weights_out_dir=Path(model_weights_out_dir),
             eval_iters=eval_iters,
             eval_interval=eval_interval,
-            use_mixed_precision=use_mixed_precision
+            use_mixed_precision=use_mixed_precision,
+            autocast_context=autocast_context
         )
 
 
