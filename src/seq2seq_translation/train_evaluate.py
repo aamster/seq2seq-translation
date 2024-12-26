@@ -336,7 +336,9 @@ def train_epoch(
         scaler.scale(loss).backward()
 
         scaler.unscale_(optimizer)
-        torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+        total_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+        if not torch.isfinite(total_norm):
+            logger.warning('Non-finite gradient norm encountered!')
 
         scaler.step(optimizer)
         scaler.update()
