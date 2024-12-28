@@ -75,5 +75,5 @@ class TestMultiHeadAttention:
             qkv_dim=8,
             is_causal=is_causal
         )
-        attn_mask = a._create_attn_mask(key_pad_mask=key_pad_mask, T_k=key_pad_mask.shape[1], T_q=4)
+        attn_mask = a._create_attn_mask(key_padding_mask=key_pad_mask, T_k=key_pad_mask.shape[1], T_q=4)
         assert (attn_mask == expected).all()

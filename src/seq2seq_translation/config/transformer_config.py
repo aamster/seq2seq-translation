@@ -1,4 +1,5 @@
 from seq2seq_translation.config._config import Config
+from seq2seq_translation.models.transformer.mlp import ActivationFunction
 
 
 class TransformerConfig(Config):
@@ -6,4 +7,4 @@ class TransformerConfig(Config):
     n_head: int = 8
     feedforward_hidden_dim: int = 2048
     norm_first: bool = False
-    activation: str = 'relu'
+    activation: ActivationFunction = ActivationFunction.RELU

@@ -1,6 +1,5 @@
 import os
-from contextlib import nullcontext
-from typing import Optional, ContextManager
+from typing import Optional
 
 import torch
 from torch import nn as nn
@@ -8,6 +7,7 @@ from torch.nn import functional as F, Transformer
 
 from seq2seq_translation.models.transformer.decoder import DecoderTransformer
 from seq2seq_translation.models.transformer.encoder import EncoderTransformer
+from seq2seq_translation.models.transformer.mlp import ActivationFunction
 
 
 class EncoderDecoderTransformer(nn.Module):
@@ -23,6 +23,8 @@ class EncoderDecoderTransformer(nn.Module):
         pad_token_id: int,
         dropout: float = 0.0,
         feedforward_hidden_dim: int = 2048,
+        norm_first: bool = False,
+        mlp_activation: ActivationFunction = ActivationFunction.RELU
     ):
         super().__init__()
 
@@ -34,6 +36,8 @@ class EncoderDecoderTransformer(nn.Module):
             block_size=block_size,
             dropout=dropout,
             feedforward_hidden_dim=feedforward_hidden_dim,
+            norm_first=norm_first,
+            mlp_activation=mlp_activation
         )
         self.decoder = DecoderTransformer(
             n_layers=n_layers,
@@ -44,6 +48,8 @@ class EncoderDecoderTransformer(nn.Module):
             dropout=dropout,
             use_cross_attention=True,
             feedforward_hidden_dim=feedforward_hidden_dim,
+            norm_first=norm_first,
+            mlp_activation=mlp_activation
         )
         self._block_size = block_size
         self._sos_token_id = sos_token_id
@@ -51,10 +57,10 @@ class EncoderDecoderTransformer(nn.Module):
         self._pad_token_id = pad_token_id
 
     def forward(self, x: torch.tensor, targets: torch.tensor):
-        input_pad_mask = (x != self._pad_token_id).bool()
-        output_pad_mask = (targets != self._pad_token_id).bool()
+        src_key_padding_mask = (x != self._pad_token_id).bool()
+        tgt_key_padding_mask = (targets != self._pad_token_id).bool()
 
-        encoder_out = self.encoder(x=x, pad_mask=input_pad_mask)
+        encoder_out = self.encoder(x=x, src_key_padding_mask=src_key_padding_mask)
 
         # Shift targets to the right by 1 position (teacher forcing)
         batch_size = x.shape[0]
@@ -65,9 +71,9 @@ class EncoderDecoderTransformer(nn.Module):
 
         logits = self.decoder(
             x=targets,
-            encoder_out=encoder_out,
-            input_pad_mask=input_pad_mask,
-            output_pad_mask=output_pad_mask,
+            memory=encoder_out,
+            memory_key_padding_mask=src_key_padding_mask,
+            tgt_key_padding_mask=tgt_key_padding_mask,
         )
         return logits
 
@@ -78,9 +84,9 @@ class EncoderDecoderTransformer(nn.Module):
         top_k: Optional[int] = None,
         max_new_tokens: Optional[int] = None,
     ):
-        input_pad_mask = (x != self._pad_token_id).bool()
+        src_key_padding_mask = (x != self._pad_token_id).bool()
 
-        encoder_out = self.encoder(x=x, pad_mask=input_pad_mask)
+        encoder_out = self.encoder(x=x, src_key_padding_mask=src_key_padding_mask)
         batch_size = x.shape[0]
         generated_tokens = torch.full(
             (batch_size, 1), self._sos_token_id, dtype=torch.long
@@ -101,8 +107,8 @@ class EncoderDecoderTransformer(nn.Module):
             # forward the model to get the logits for the index in the sequence
             logits = self.decoder(
                 x=generated_tokens_cropped,
-                encoder_out=encoder_out,
-                input_pad_mask=input_pad_mask,
+                memory=encoder_out,
+                memory_key_padding_mask=src_key_padding_mask,
             )
             # pluck the logits at the final step and scale by desired temperature
             logits = logits[:, -1, :] / temperature

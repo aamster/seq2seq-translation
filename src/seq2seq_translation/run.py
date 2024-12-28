@@ -12,7 +12,6 @@ import wandb
 from loguru import logger
 from torch import optim
 from torch.utils.data import DataLoader, DistributedSampler
-import torch.nn.functional as F
 
 from seq2seq_translation.config._config import ModelType
 from seq2seq_translation.config.rnn_config import RNNConfig
@@ -23,7 +22,7 @@ from seq2seq_translation.inference import (
     BeamSearchSequenceGenerator,
     GreedySequenceGenerator,
 )
-from seq2seq_translation.models.transformer.encoder_decoder import EncoderDecoderTransformer2
+from seq2seq_translation.models.transformer.encoder_decoder import EncoderDecoderTransformer
 from seq2seq_translation.sentence_pairs_dataset import SentencePairsDataset
 from seq2seq_translation.tokenization.sentencepiece_tokenizer import (
     SentencePieceTokenizer,
@@ -254,7 +253,7 @@ def main(config: RNNConfig | TransformerConfig):
             model = EncoderDecoderRNN(encoder=encoder, decoder=decoder)
         else:
             assert isinstance(config, TransformerConfig), "expected TransformerConfig"
-            model = EncoderDecoderTransformer2(
+            model = EncoderDecoderTransformer(
                 n_attention_heads=config.n_head,
                 n_layers=config.num_layers,
                 vocab_size=target_tokenizer.processor.vocab_size(),
@@ -265,7 +264,7 @@ def main(config: RNNConfig | TransformerConfig):
                 eos_token_id=target_tokenizer.processor.eos_id(),
                 pad_token_id=source_tokenizer.processor.pad_id(),
                 norm_first=config.norm_first,
-                activation=F.relu if config.activation == 'relu' else F.gelu
+                # activation=F.relu if config.activation == 'relu' else F.gelu
             ).to(device)
 
         optimizer = optim.AdamW(
