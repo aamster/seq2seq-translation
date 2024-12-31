@@ -10,7 +10,7 @@ from seq2seq_translation.models.transformer._transformer import _Transformer
 from seq2seq_translation.models.transformer.mlp import MLP, ActivationFunction
 import torch.nn.functional as F
 
-from seq2seq_translation.models.transformer.positional_embedding import PositionalEmbeddingType
+from seq2seq_translation.models.transformer.positional_encoding import PositionalEncodingType
 from seq2seq_translation.tokenization.sentencepiece_tokenizer import PAD_ID, EOS_ID
 
 
@@ -104,7 +104,7 @@ class DecoderTransformer(_Transformer):
         feedforward_hidden_dim: int = 2048,
         norm_first: bool = False,
         mlp_activation: ActivationFunction = ActivationFunction.RELU,
-        positional_embedding_type: PositionalEmbeddingType = PositionalEmbeddingType.LEARNED
+        positional_encoding_type: PositionalEncodingType = PositionalEncodingType.LEARNED
     ):
         super().__init__(
             n_attention_heads=n_attention_heads,
@@ -113,7 +113,7 @@ class DecoderTransformer(_Transformer):
             d_model=d_model,
             block_size=block_size,
             dropout=dropout,
-            positional_embedding_type=positional_embedding_type
+            positional_encoding_type=positional_encoding_type
         )
         self._use_cross_attention = use_cross_attention
         self.blocks = nn.ModuleList(

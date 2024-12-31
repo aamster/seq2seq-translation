@@ -5,7 +5,7 @@ from torch.nn import LayerNorm
 from seq2seq_translation.models.transformer.multi_head_attention import MultiHeadSelfAttention
 from seq2seq_translation.models.transformer.mlp import MLP, ActivationFunction
 from seq2seq_translation.models.transformer._transformer import _Transformer
-from seq2seq_translation.models.transformer.positional_embedding import PositionalEmbeddingType
+from seq2seq_translation.models.transformer.positional_encoding import PositionalEncodingType
 
 
 class _EncoderBlock(nn.Module):
@@ -55,7 +55,7 @@ class EncoderTransformer(_Transformer):
         feedforward_hidden_dim: int = 2048,
         norm_first: bool = False,
         mlp_activation: ActivationFunction = ActivationFunction.RELU,
-        positional_embedding_type: PositionalEmbeddingType = PositionalEmbeddingType.LEARNED
+        positional_encoding_type: PositionalEncodingType = PositionalEncodingType.LEARNED
     ):
         super().__init__(
             n_attention_heads=n_attention_heads,
@@ -64,7 +64,7 @@ class EncoderTransformer(_Transformer):
             vocab_size=vocab_size,
             block_size=block_size,
             dropout=dropout,
-            positional_embedding_type=positional_embedding_type
+            positional_encoding_type=positional_encoding_type
         )
         self.blocks = nn.ModuleList(
             [

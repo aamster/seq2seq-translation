@@ -276,7 +276,7 @@ def main(config: RNNConfig | TransformerConfig):
                     norm_first=config.norm_first,
                     mlp_activation=config.activation,
                     use_cross_attention=False,
-                    positional_embedding_type=config.positional_embedding_type
+                    positional_encoding_type=config.positional_encoding_type
                 ).to(device)
             else:
                 model = EncoderDecoderTransformer(
@@ -291,7 +291,7 @@ def main(config: RNNConfig | TransformerConfig):
                     pad_token_id=source_tokenizer.processor.pad_id(),
                     norm_first=config.norm_first,
                     mlp_activation=config.activation,
-                    positional_embedding_type=config.positional_embedding_type
+                    positional_encoding_type=config.positional_encoding_type
                 ).to(device)
 
         optimizer = optim.AdamW(

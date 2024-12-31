@@ -1,6 +1,6 @@
 from enum import Enum
 
 
-class PositionalEmbeddingType(Enum):
+class PositionalEncodingType(Enum):
     LEARNED = 'learned'
     SINUSOIDAL = 'sinusoidal'

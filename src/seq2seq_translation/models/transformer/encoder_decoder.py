@@ -8,7 +8,7 @@ from torch.nn import functional as F
 from seq2seq_translation.models.transformer.decoder import DecoderTransformer
 from seq2seq_translation.models.transformer.encoder import EncoderTransformer
 from seq2seq_translation.models.transformer.mlp import ActivationFunction
-from seq2seq_translation.models.transformer.positional_embedding import PositionalEmbeddingType
+from seq2seq_translation.models.transformer.positional_encoding import PositionalEncodingType
 
 
 class EncoderDecoderTransformer(nn.Module):
@@ -26,7 +26,7 @@ class EncoderDecoderTransformer(nn.Module):
         feedforward_hidden_dim: int = 2048,
         norm_first: bool = False,
         mlp_activation: ActivationFunction = ActivationFunction.RELU,
-        positional_embedding_type: PositionalEmbeddingType = PositionalEmbeddingType.LEARNED
+        positional_encoding_type: PositionalEncodingType = PositionalEncodingType.LEARNED
     ):
         super().__init__()
 
@@ -40,7 +40,7 @@ class EncoderDecoderTransformer(nn.Module):
             feedforward_hidden_dim=feedforward_hidden_dim,
             norm_first=norm_first,
             mlp_activation=mlp_activation,
-            positional_embedding_type=positional_embedding_type
+            positional_encoding_type=positional_encoding_type
         )
         self.decoder = DecoderTransformer(
             n_layers=n_layers,
@@ -53,7 +53,7 @@ class EncoderDecoderTransformer(nn.Module):
             feedforward_hidden_dim=feedforward_hidden_dim,
             norm_first=norm_first,
             mlp_activation=mlp_activation,
-            positional_embedding_type=positional_embedding_type
+            positional_encoding_type=positional_encoding_type
         )
         self._block_size = block_size
         self._sos_token_id = sos_token_id
