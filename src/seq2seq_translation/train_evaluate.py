@@ -9,6 +9,7 @@ import torch
 import wandb
 from torch import nn
 import torch.nn.functional as F
+from torch.nn.parallel import DistributedDataParallel
 from torch.utils.data import (
     DataLoader,
     DistributedSampler,
@@ -410,13 +411,13 @@ def inference(
         decoded_ids = topi.squeeze()
     else:
         if target_tensor is not None:
-            if isinstance(model, EncoderDecoderTransformer):
+            if isinstance(model.module if isinstance(model, DistributedDataParallel) else model, EncoderDecoderTransformer):
                 logits = model(x=input_tensor, targets=target_tensor)
-            elif isinstance(model, DecoderTransformer):
+            elif isinstance(model.module if isinstance(model, DistributedDataParallel) else model, DecoderTransformer):
                 tgt_key_padding_mask = (input_tensor != PAD_ID).bool()
                 logits = model(x=input_tensor, tgt_key_padding_mask=tgt_key_padding_mask)
             else:
-                raise ValueError(f'unknown model type {type(model)}')
+                raise ValueError(f'unknown model type {type(model.module if isinstance(model, DistributedDataParallel) else model)}')
             probs = F.softmax(logits, dim=-1)
             _, topi = probs.topk(1)
             decoded_ids = topi.squeeze()
