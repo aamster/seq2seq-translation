@@ -324,9 +324,9 @@ def train_epoch(
                     x=input_tensor, input_lengths=input_lengths, target_tensor=target_tensor
                 )
             else:
-                if isinstance(model, EncoderDecoderTransformer):
+                if isinstance(model.module if isinstance(model, DistributedDataParallel) else model, EncoderDecoderTransformer):
                     logits = model(x=input_tensor, targets=target_tensor)
-                elif isinstance(model, DecoderTransformer):
+                elif isinstance(model.module if isinstance(model, DistributedDataParallel) else model, DecoderTransformer):
                     tgt_key_padding_mask = (input_tensor != PAD_ID).bool()
                     logits = model(x=input_tensor, tgt_key_padding_mask=tgt_key_padding_mask)
                 else:
