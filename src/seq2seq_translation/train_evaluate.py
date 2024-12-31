@@ -105,6 +105,7 @@ def estimate_performance_metrics(
     model: EncoderDecoderRNN | EncoderDecoderTransformer,
     epoch: int,
     eval_iters: int = 200,
+    max_new_tokens: Optional[int] = None
 ):
     out = {"train": {}, "val": {}}
     model.eval()
@@ -176,6 +177,7 @@ def estimate_performance_metrics(
                 input_tensor=input_tensor,
                 target_tensor=target_tensor if data_loader_name == "train" else None,
                 input_lengths=input_lengths,
+                max_new_tokens=max_new_tokens
             )
 
             if data_loader_name == "train":
@@ -211,6 +213,7 @@ def estimate_performance_metrics(
                         idx=torch.randint(
                             low=0, high=len(data_loader.dataset), size=(1,)
                         )[0].item(),
+                        max_new_tokens=max_new_tokens
                     )
                 )
                 logger.info(f"dataset: {dataset_name}")
@@ -237,6 +240,7 @@ def train_epoch(
     eval_iters: int = 200,
     use_mixed_precision: bool = True,
     autocast_context: ContextManager = nullcontext(),
+    max_new_inference_tokens: Optional[int] = None
 ):
     scaler = torch.cuda.amp.GradScaler(enabled=use_mixed_precision)
 
@@ -283,6 +287,7 @@ def train_epoch(
                     model=model,
                     eval_iters=eval_iters,
                     epoch=epoch,
+                    max_new_tokens=max_new_inference_tokens
                 )
 
             if is_master_process():
@@ -367,6 +372,7 @@ def get_pred(
     source_tokenizer: SentencePieceTokenizer,
     target_tokenizer: SentencePieceTokenizer,
     idx: int,
+    max_new_tokens: Optional[int] = None
 ):
     input_tensor, target_tensor, dataset_name = data_loader.dataset[idx]
 
@@ -378,6 +384,7 @@ def get_pred(
         model=model,
         input_tensor=input_tensor.reshape(1, -1),
         input_lengths=[len(input_tensor)],
+        max_new_tokens=max_new_tokens
     )
 
     input = source_tokenizer.decode(input_tensor)
@@ -392,6 +399,7 @@ def inference(
     input_tensor: torch.tensor,
     input_lengths: Optional[list[int]] = None,
     target_tensor: Optional[torch.Tensor] = None,
+    max_new_tokens: Optional[int] = None
  ):
     if isinstance(model, EncoderDecoderRNN):
         logits, decoder_hidden, decoder_attn = model(
@@ -416,7 +424,7 @@ def inference(
             if isinstance(model, torch.nn.parallel.DistributedDataParallel):
                 model = model.module
 
-            decoded_ids, logits = model.generate(x=input_tensor, top_k=1)
+            decoded_ids, logits = model.generate(x=input_tensor, top_k=1, max_new_tokens=max_new_tokens)
         decoder_hidden, decoder_attn = None, None
 
     return logits, decoder_hidden, decoder_attn, decoded_ids
@@ -499,7 +507,8 @@ def train(
     eval_iters: int = 200,
     label_smoothing: float = 0.0,
     use_mixed_precision: bool = True,
-    autocast_context: ContextManager = nullcontext()
+    autocast_context: ContextManager = nullcontext(),
+    max_new_inference_tokens: Optional[int] = None
 ):
     os.makedirs(model_weights_out_dir, exist_ok=True)
 
@@ -529,7 +538,8 @@ def train(
             eval_iters=eval_iters,
             eval_interval=eval_interval,
             use_mixed_precision=use_mixed_precision,
-            autocast_context=autocast_context
+            autocast_context=autocast_context,
+            max_new_inference_tokens=max_new_inference_tokens
         )
 
 

@@ -1,6 +1,8 @@
 import torch
 from torch import nn as nn
 
+from seq2seq_translation.models.transformer.positional_embedding import PositionalEmbeddingType
+
 
 class _Transformer(nn.Module):
     def __init__(
@@ -11,6 +13,7 @@ class _Transformer(nn.Module):
         d_model: int,
         block_size: int,
         dropout: float = 0.0,
+        positional_embedding_type: PositionalEmbeddingType = PositionalEmbeddingType.LEARNED
     ):
         super().__init__()
         self._vocab_size = vocab_size
@@ -23,15 +26,23 @@ class _Transformer(nn.Module):
         self.embedding = nn.Embedding(self._vocab_size, self._d_model)
         self.positional_encoding = nn.Embedding(self._block_size, self._d_model)
         self.dropout = nn.Dropout(self._dropout)
+        self._positional_embedding_type = positional_embedding_type
 
     def _calc_embeddings(self, x: torch.tensor):
         device = x.device
         b, t = x.size()
-        assert (
-            t <= self._block_size
-        ), f"Cannot forward sequence of length {t}, block size is only {self._block_size}"
+
         pos = torch.arange(0, t, dtype=torch.long, device=device)  # shape (t)
 
+        if self._positional_embedding_type == PositionalEmbeddingType.LEARNED:
+            assert (
+                t <= self._block_size
+            ), f"Cannot forward sequence of length {t}, block size is only {self._block_size}"
+        elif self._positional_embedding_type == PositionalEmbeddingType.SINUSOIDAL:
+            pos[::2] = torch.sin(pos[::2] / 1e4**(2*pos[::2]/self._d_model))
+            pos[1::2] = torch.cos(pos[1::2] / 1e4 ** (2 * pos[1::2] / self._d_model))
+        else:
+            raise ValueError(f'{self._positional_embedding_type} not supported')
         tok_emb = self.embedding(x)  # token embeddings of shape (b, t, d_model)
         pos_emb = self.positional_encoding(pos)  # (t, d_model)
         x = self.dropout(tok_emb + pos_emb)

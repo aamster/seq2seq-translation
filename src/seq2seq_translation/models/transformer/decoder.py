@@ -10,6 +10,7 @@ from seq2seq_translation.models.transformer._transformer import _Transformer
 from seq2seq_translation.models.transformer.mlp import MLP, ActivationFunction
 import torch.nn.functional as F
 
+from seq2seq_translation.models.transformer.positional_embedding import PositionalEmbeddingType
 from seq2seq_translation.tokenization.sentencepiece_tokenizer import PAD_ID, EOS_ID
 
 
@@ -102,7 +103,8 @@ class DecoderTransformer(_Transformer):
         use_cross_attention: bool = True,
         feedforward_hidden_dim: int = 2048,
         norm_first: bool = False,
-        mlp_activation: ActivationFunction = ActivationFunction.RELU
+        mlp_activation: ActivationFunction = ActivationFunction.RELU,
+        positional_embedding_type: PositionalEmbeddingType = PositionalEmbeddingType.LEARNED
     ):
         super().__init__(
             n_attention_heads=n_attention_heads,
@@ -111,6 +113,7 @@ class DecoderTransformer(_Transformer):
             d_model=d_model,
             block_size=block_size,
             dropout=dropout,
+            positional_embedding_type=positional_embedding_type
         )
         self._use_cross_attention = use_cross_attention
         self.blocks = nn.ModuleList(
@@ -163,12 +166,7 @@ class DecoderTransformer(_Transformer):
         top_k: Optional[int] = None,
         max_new_tokens: Optional[int] = None,
     ):
-        key_padding_mask = (x != PAD_ID).bool()
-
-        batch_size = x.shape[0]
-        generated_tokens = torch.empty(
-            (batch_size, 1), dtype=torch.long
-        ).to(x.device)
+        generated_tokens = torch.tensor([], dtype=torch.long).to(x.device)
 
         context = x
 
@@ -177,16 +175,11 @@ class DecoderTransformer(_Transformer):
             max_new_tokens = input_len + 50 # from "Attention is all you need"
 
         all_logits = []
-        for _ in range(max_new_tokens):
-            # if the sequence context is growing too long we must crop it at block_size
-            if context.size(1) <= self._block_size:
-                context_cropped = context
-            else:
-                context_cropped = context[:, -self._block_size :]
-
+        for i in range(max_new_tokens):
             # forward the model to get the logits for the index in the sequence
+            key_padding_mask = (context != PAD_ID).bool()
             logits = self(
-                x=context_cropped,
+                x=context,
                 tgt_key_padding_mask=key_padding_mask
             )
             # pluck the logits at the final step and scale by desired temperature
@@ -202,7 +195,7 @@ class DecoderTransformer(_Transformer):
             next_token = torch.multinomial(probs, num_samples=1)
             # append sampled index to the running sequence and continue
             generated_tokens = torch.cat((generated_tokens, next_token), dim=1)
-
+            context = torch.cat([context, generated_tokens], dim=1)
             # Stop if all sequences in the batch generated <eos>
             if (next_token == EOS_ID).all():
                 break

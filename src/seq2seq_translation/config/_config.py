@@ -36,7 +36,7 @@ class Config(BaseModel):
     eval_iters: int = 200
     eval_out_path: Optional[Path] = None
     is_test: bool = False
-    decoder_num_timesteps: int = 80
+    decoder_num_timesteps: Optional[int] = None
     use_ddp: bool = False
     num_train_dataloader_num_workers: int = 0
     eval_sequence_generator_type: str = "beam search"

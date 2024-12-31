@@ -275,7 +275,8 @@ def main(config: RNNConfig | TransformerConfig):
                     feedforward_hidden_dim=config.feedforward_hidden_dim,
                     norm_first=config.norm_first,
                     mlp_activation=config.activation,
-                    use_cross_attention=False
+                    use_cross_attention=False,
+                    positional_embedding_type=config.positional_embedding_type
                 ).to(device)
             else:
                 model = EncoderDecoderTransformer(
@@ -289,7 +290,8 @@ def main(config: RNNConfig | TransformerConfig):
                     eos_token_id=target_tokenizer.processor.eos_id(),
                     pad_token_id=source_tokenizer.processor.pad_id(),
                     norm_first=config.norm_first,
-                    mlp_activation=config.activation
+                    mlp_activation=config.activation,
+                    positional_embedding_type=config.positional_embedding_type
                 ).to(device)
 
         optimizer = optim.AdamW(
@@ -377,6 +379,7 @@ def main(config: RNNConfig | TransformerConfig):
                 label_smoothing=config.label_smoothing,
                 use_mixed_precision=config.use_mixed_precision,
                 autocast_context=ctx,
+                max_new_inference_tokens=config.decoder_num_timesteps
             )
 
 
