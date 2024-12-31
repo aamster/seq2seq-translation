@@ -195,7 +195,7 @@ class DecoderTransformer(_Transformer):
             next_token = torch.multinomial(probs, num_samples=1)
             # append sampled index to the running sequence and continue
             generated_tokens = torch.cat((generated_tokens, next_token), dim=1)
-            context = torch.cat([context, generated_tokens], dim=1)
+            context = torch.cat([context, next_token], dim=1)
             # Stop if all sequences in the batch generated <eos>
             if (next_token == EOS_ID).all():
                 break
