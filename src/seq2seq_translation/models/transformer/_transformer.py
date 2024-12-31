@@ -33,17 +33,19 @@ class _Transformer(nn.Module):
         b, t = x.size()
 
         pos = torch.arange(0, t, dtype=torch.long, device=device)  # shape (t)
+        tok_emb = self.embedding(x)  # token embeddings of shape (b, t, d_model)
 
         if self._positional_encoding_type == PositionalEncodingType.LEARNED:
             assert (
                 t <= self._block_size
             ), f"Cannot forward sequence of length {t}, block size is only {self._block_size}"
+            pos_emb = self.positional_encoding(pos)  # (t, d_model)
+            x = tok_emb + pos_emb
         elif self._positional_encoding_type == PositionalEncodingType.SINUSOIDAL:
             pos[::2] = torch.sin(pos[::2] / 1e4**(2*pos[::2]/self._d_model))
             pos[1::2] = torch.cos(pos[1::2] / 1e4 ** (2 * pos[1::2] / self._d_model))
+            x = tok_emb + pos
         else:
             raise ValueError(f'{self._positional_encoding_type} not supported')
-        tok_emb = self.embedding(x)  # token embeddings of shape (b, t, d_model)
-        pos_emb = self.positional_encoding(pos)  # (t, d_model)
-        x = self.dropout(tok_emb + pos_emb)
+        x = self.dropout(x)
         return x
