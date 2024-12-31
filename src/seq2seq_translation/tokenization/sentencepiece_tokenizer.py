@@ -6,11 +6,14 @@ import sentencepiece as spm
 import torch
 
 
+EOS_ID = 2
+PAD_ID = 3
+
 class SentencePieceTokenizer:
     def __init__(
         self,
         model_prefix: str,
-        input_path: Optional[str] = None,
+        input_path: Optional[str | list[str]] = None,
         vocab_size: Optional[int] = 13000,
     ):
         self._processor = spm.SentencePieceProcessor()
@@ -45,8 +48,8 @@ class SentencePieceTokenizer:
             # special tokens
             unk_id=0,  # the UNK token MUST exist
             bos_id=1,  # the others are optional, set to -1 to turn off
-            eos_id=2,
-            pad_id=3,
+            eos_id=EOS_ID,
+            pad_id=PAD_ID,
             # systems
             num_threads=os.cpu_count(),  # use ~all system resources
         )

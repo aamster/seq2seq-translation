@@ -8,6 +8,9 @@ from seq2seq_translation.models.transformer.multi_head_attention import MultiHea
     MultiHeadCrossAttention
 from seq2seq_translation.models.transformer._transformer import _Transformer
 from seq2seq_translation.models.transformer.mlp import MLP, ActivationFunction
+import torch.nn.functional as F
+
+from seq2seq_translation.tokenization.sentencepiece_tokenizer import PAD_ID, EOS_ID
 
 
 class _DecoderBlock(nn.Module):
@@ -83,7 +86,7 @@ class _DecoderBlock(nn.Module):
                 )
                 x = self.layer_norm[1](x)
             x = x + self.mlp(x)
-            x = self.layer_norm[2](x)
+            x = self.layer_norm[2 if self._use_cross_attention else 1](x)
         return x
 
 
@@ -152,3 +155,69 @@ class DecoderTransformer(_Transformer):
         x = self.layer_norm(x)
         logits = self.lm_head(x)
         return logits
+
+    def generate(
+        self,
+        x: torch.tensor,
+        temperature: float = 1.0,
+        top_k: Optional[int] = None,
+        max_new_tokens: Optional[int] = None,
+    ):
+        key_padding_mask = (x != PAD_ID).bool()
+
+        batch_size = x.shape[0]
+        generated_tokens = torch.empty(
+            (batch_size, 1), dtype=torch.long
+        ).to(x.device)
+
+        context = x
+
+        input_len = x.shape[1]
+        if max_new_tokens is None:
+            max_new_tokens = input_len + 50 # from "Attention is all you need"
+
+        all_logits = []
+        for _ in range(max_new_tokens):
+            # if the sequence context is growing too long we must crop it at block_size
+            if context.size(1) <= self._block_size:
+                context_cropped = context
+            else:
+                context_cropped = context[:, -self._block_size :]
+
+            # forward the model to get the logits for the index in the sequence
+            logits = self(
+                x=context_cropped,
+                tgt_key_padding_mask=key_padding_mask
+            )
+            # pluck the logits at the final step and scale by desired temperature
+            logits = logits[:, -1, :] / temperature
+            # optionally crop the logits to only the top k options
+            if top_k is not None:
+                v, _ = torch.topk(logits, min(top_k, logits.size(-1)))
+                logits[logits < v[:, [-1]]] = -float("Inf")
+            all_logits.append(logits)
+            # apply softmax to convert logits to (normalized) probabilities
+            probs = F.softmax(logits, dim=-1)
+            # sample from the distribution
+            next_token = torch.multinomial(probs, num_samples=1)
+            # append sampled index to the running sequence and continue
+            generated_tokens = torch.cat((generated_tokens, next_token), dim=1)
+
+            # Stop if all sequences in the batch generated <eos>
+            if (next_token == EOS_ID).all():
+                break
+        logits = torch.cat(all_logits, dim=1)
+        return generated_tokens, logits
+
+    @property
+    def num_params(self, non_embedding: bool = True):
+        """
+        Return the number of parameters in the model.
+        For non-embedding count (default), the position embeddings get subtracted.
+        The token embeddings would too, except due to the parameter sharing these
+        params are actually used as weights in the final layer, so we include them.
+        """
+        n_params = sum(p.numel() for p in self.parameters())
+        if non_embedding:
+            n_params -= self.positional_encoding.weight.numel()
+        return n_params

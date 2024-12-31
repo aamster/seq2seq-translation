@@ -22,10 +22,11 @@ from seq2seq_translation.inference import (
     BeamSearchSequenceGenerator,
     GreedySequenceGenerator,
 )
+from seq2seq_translation.models.transformer.decoder import DecoderTransformer
 from seq2seq_translation.models.transformer.encoder_decoder import EncoderDecoderTransformer
 from seq2seq_translation.sentence_pairs_dataset import SentencePairsDataset
 from seq2seq_translation.tokenization.sentencepiece_tokenizer import (
-    SentencePieceTokenizer,
+    SentencePieceTokenizer, PAD_ID,
 )
 from seq2seq_translation.models.rnn import (
     EncoderRNN,
@@ -109,23 +110,30 @@ def main(config: RNNConfig | TransformerConfig):
         )
         train_idxs, test_idxs = splitter.split()
 
-        source_tokenizer_model_path = (
-            Path(config.sentence_piece_model_dir) / f"{config.source_lang}"
-        )
-        target_tokenizer_model_path = (
-            Path(config.sentence_piece_model_dir) / f"{config.target_lang}"
-        )
+        if config.decoder_only:
+            combined_tokenizer = SentencePieceTokenizer(
+                model_prefix=str(Path(config.sentence_piece_model_dir) / Path(config.sentence_piece_model_dir).name)
+            )
+            logger.info(f'{combined_tokenizer.processor.vocab_size()} tokens')
+            source_tokenizer, target_tokenizer = None, None
+        else:
+            source_tokenizer_model_path = (
+                    Path(config.sentence_piece_model_dir) / f"{config.source_lang}"
+            )
+            target_tokenizer_model_path = (
+                    Path(config.sentence_piece_model_dir) / f"{config.target_lang}"
+            )
+            source_tokenizer = SentencePieceTokenizer(
+                model_prefix=str(source_tokenizer_model_path)
+            )
 
-        source_tokenizer = SentencePieceTokenizer(
-            model_prefix=str(source_tokenizer_model_path)
-        )
+            target_tokenizer = SentencePieceTokenizer(
+                model_prefix=str(target_tokenizer_model_path)
+            )
+            combined_tokenizer = None
+            logger.info(f"{source_tokenizer.processor.vocab_size()} source tokens")
+            logger.info(f"{target_tokenizer.processor.vocab_size()} target tokens")
 
-        target_tokenizer = SentencePieceTokenizer(
-            model_prefix=str(target_tokenizer_model_path)
-        )
-
-        print(f"{source_tokenizer.processor.vocab_size()} source tokens")
-        print(f"{target_tokenizer.processor.vocab_size()} target tokens")
 
         if config.limit is not None:
             train_idxs = train_idxs[: config.limit]
@@ -138,6 +146,8 @@ def main(config: RNNConfig | TransformerConfig):
             idxs=train_idxs,
             source_tokenizer=source_tokenizer,
             target_tokenizer=target_tokenizer,
+            combined_tokenizer=combined_tokenizer,
+            combine_source_and_target=config.decoder_only,
             # TODO would be better if didn't have to truncate
             # consider chunking?
             max_length=config.max_input_length,
@@ -147,6 +157,7 @@ def main(config: RNNConfig | TransformerConfig):
             idxs=test_idxs,
             source_tokenizer=source_tokenizer,
             target_tokenizer=target_tokenizer,
+            combined_tokenizer=combined_tokenizer,
             # TODO would be better if didn't have to truncate
             # consider chunking?
             max_length=config.max_input_length,
@@ -164,10 +175,11 @@ def main(config: RNNConfig | TransformerConfig):
             idxs=np.arange(len(test_datasets)),
             source_tokenizer=source_tokenizer,
             target_tokenizer=target_tokenizer,
+            combined_tokenizer=combined_tokenizer,
             max_length=None,
         )
 
-        collate_fn = CollateFunction(pad_token_id=source_tokenizer.processor.pad_id())
+        collate_fn = CollateFunction(pad_token_id=PAD_ID)
 
         train_sampler = DistributedSampler(train_dset) if config.use_ddp else None
         train_data_loader = DataLoader(
@@ -253,19 +265,32 @@ def main(config: RNNConfig | TransformerConfig):
             model = EncoderDecoderRNN(encoder=encoder, decoder=decoder)
         else:
             assert isinstance(config, TransformerConfig), "expected TransformerConfig"
-            model = EncoderDecoderTransformer(
-                n_attention_heads=config.n_head,
-                n_layers=config.num_layers,
-                vocab_size=target_tokenizer.processor.vocab_size(),
-                d_model=config.d_model,
-                block_size=config.max_input_length,
-                feedforward_hidden_dim=config.feedforward_hidden_dim,
-                sos_token_id=target_tokenizer.processor.bos_id(),
-                eos_token_id=target_tokenizer.processor.eos_id(),
-                pad_token_id=source_tokenizer.processor.pad_id(),
-                norm_first=config.norm_first,
-                # activation=F.relu if config.activation == 'relu' else F.gelu
-            ).to(device)
+            if config.decoder_only:
+                model = DecoderTransformer(
+                    n_attention_heads=config.n_head,
+                    n_layers=config.num_layers,
+                    vocab_size=combined_tokenizer.processor.vocab_size(),
+                    d_model=config.d_model,
+                    block_size=config.max_input_length*2,
+                    feedforward_hidden_dim=config.feedforward_hidden_dim,
+                    norm_first=config.norm_first,
+                    mlp_activation=config.activation,
+                    use_cross_attention=False
+                ).to(device)
+            else:
+                model = EncoderDecoderTransformer(
+                    n_attention_heads=config.n_head,
+                    n_layers=config.num_layers,
+                    vocab_size=target_tokenizer.processor.vocab_size(),
+                    d_model=config.d_model,
+                    block_size=config.max_input_length,
+                    feedforward_hidden_dim=config.feedforward_hidden_dim,
+                    sos_token_id=target_tokenizer.processor.bos_id(),
+                    eos_token_id=target_tokenizer.processor.eos_id(),
+                    pad_token_id=source_tokenizer.processor.pad_id(),
+                    norm_first=config.norm_first,
+                    mlp_activation=config.activation
+                ).to(device)
 
         optimizer = optim.AdamW(
             model.parameters(),
