@@ -24,7 +24,10 @@ class _Transformer(nn.Module):
         self._n_layers = n_layers
 
         self.embedding = nn.Embedding(self._vocab_size, self._d_model)
-        self.positional_encoding = nn.Embedding(self._block_size, self._d_model)
+        if positional_encoding_type == PositionalEncodingType.LEARNED:
+            self.positional_embedding = nn.Embedding(self._block_size, self._d_model)
+        else:
+            self.positional_embedding = None
         self.dropout = nn.Dropout(self._dropout)
         self._positional_encoding_type = positional_encoding_type
 
@@ -39,7 +42,7 @@ class _Transformer(nn.Module):
                 t <= self._block_size
             ), f"Cannot forward sequence of length {t}, block size is only {self._block_size}"
             pos = torch.arange(0, t, dtype=torch.long, device=device)  # shape (t)
-            pos_emb = self.positional_encoding(pos)  # (t, d_model)
+            pos_emb = self.positional_embedding(pos)  # (t, d_model)
             x = tok_emb + pos_emb
         elif self._positional_encoding_type == PositionalEncodingType.SINUSOIDAL:
             pos = torch.arange(0, t, device=device, dtype=tok_emb.dtype)  # shape (t)
