@@ -435,6 +435,8 @@ def inference(
                 raise ValueError(f'unknown model type {type(model.module if isinstance(model, DistributedDataParallel) else model)}')
 
             if isinstance(model.module if isinstance(model, DistributedDataParallel) else model, DecoderTransformer):
+                if isinstance(model, torch.nn.parallel.DistributedDataParallel):
+                    model = model.module
                 decoded_ids, _ = model.generate(x=input_tensor, top_k=1, max_new_tokens=max_new_tokens)
             else:
                 probs = F.softmax(logits, dim=-1)
