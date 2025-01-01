@@ -25,7 +25,6 @@ import evaluate as huggingface_evaluate
 from seq2seq_translation.inference import SequenceGenerator, BeamSearchSequenceGenerator
 from seq2seq_translation.models.transformer.decoder import DecoderTransformer
 from seq2seq_translation.models.transformer.encoder_decoder import EncoderDecoderTransformer
-from seq2seq_translation.sentence_pairs_dataset import SentencePairsDataset
 from seq2seq_translation.tokenization.sentencepiece_tokenizer import (
     SentencePieceTokenizer, PAD_ID,
 )
@@ -51,7 +50,6 @@ def _compute_loss(
 ):
     batch_size = target_tensor.shape[0]
     C = logits.shape[-1]
-    T = target_tensor.shape[-1]
 
     # Pad decoder_outputs if necessary
     logits = torch.nn.functional.pad(
@@ -59,6 +57,8 @@ def _compute_loss(
         (0, 0, 0, max(0, target_tensor.shape[1] - logits.shape[1])),
         value=PAD_ID,
     )
+
+    T = target_tensor.shape[-1]
 
     loss = criterion(
         logits.reshape(batch_size * T, C), target_tensor.view(batch_size * T)
@@ -167,22 +167,26 @@ def estimate_performance_metrics(
             data_loader.dataset.combined_tokenizer if data_loader.dataset.combined_tokenizer is not None else data_loader.dataset.target_tokenizer)
 
         for eval_iter in iterator:
-            input_tensor, target_tensor, _, input_lengths = next(data_loader_iter)
+            input_tensor, target_tensor, combined_tensor, combined_target_tensor, _, input_lengths = next(data_loader_iter)
 
             if torch.cuda.is_available():
                 input_tensor = input_tensor.to(torch.device(os.environ["DEVICE"]))
                 target_tensor = target_tensor.to(torch.device(os.environ["DEVICE"]))
+                if combined_tensor is not None:
+                    combined_tensor = combined_tensor.to(torch.device(os.environ["DEVICE"]))
+                    combined_target_tensor = combined_target_tensor.to(torch.device(os.environ["DEVICE"]))
 
             logits, _, _, decoded_ids = inference(
                 model=model,
                 input_tensor=input_tensor,
                 target_tensor=target_tensor if data_loader_name == "train" else None,
+                combined_tensor=combined_tensor,
                 input_lengths=input_lengths,
                 max_new_tokens=max_new_tokens
             )
 
             if data_loader_name == "train":
-                loss = _compute_loss(logits, target_tensor, criterion, train_loader)
+                loss = _compute_loss(logits, combined_target_tensor if combined_target_tensor is not None else target_tensor, criterion, train_loader)
                 local_losses[eval_iter] = loss
 
             bleu_score = _compute_bleu_score(
@@ -250,7 +254,7 @@ def train_epoch(
         train_data_loader, total=len(train_data_loader), desc=f"train epoch {epoch}"
     )
     for epoch_iter, data in enumerate(prog_bar):
-        input_tensor, target_tensor, _, input_lengths = data
+        input_tensor, target_tensor, combined_tensor, combined_target_tensor, _, input_lengths = data
         input_tensor: torch.Tensor
         target_tensor: torch.Tensor
 
@@ -263,6 +267,13 @@ def train_epoch(
             target_tensor = target_tensor.to(
                 torch.device(os.environ["DEVICE"]), non_blocking=True
             )
+            if combined_tensor is not None:
+                combined_tensor = combined_tensor.to(
+                    torch.device(os.environ["DEVICE"]), non_blocking=True
+                )
+                combined_target_tensor = combined_target_tensor.to(
+                    torch.device(os.environ["DEVICE"]), non_blocking=True
+                )
 
         if decay_learning_rate:
             lr = _get_lr(
@@ -327,13 +338,16 @@ def train_epoch(
                 if isinstance(model.module if isinstance(model, DistributedDataParallel) else model, EncoderDecoderTransformer):
                     logits = model(x=input_tensor, targets=target_tensor)
                 elif isinstance(model.module if isinstance(model, DistributedDataParallel) else model, DecoderTransformer):
-                    tgt_key_padding_mask = (input_tensor != PAD_ID).bool()
-                    logits = model(x=input_tensor, tgt_key_padding_mask=tgt_key_padding_mask)
+                    tgt_key_padding_mask = (combined_tensor != PAD_ID).bool()
+                    logits = model(x=combined_tensor, tgt_key_padding_mask=tgt_key_padding_mask)
                 else:
                     raise ValueError(f'unknown model {type(model)}')
 
             batch_size = target_tensor.shape[0]
             C = logits.shape[-1]
+
+            if combined_target_tensor is not None:
+                target_tensor = combined_target_tensor
             T = target_tensor.shape[-1]
 
             # if decoder_outputs shorter than target_tensor, pad it so that shapes match
@@ -375,7 +389,7 @@ def get_pred(
     idx: int,
     max_new_tokens: Optional[int] = None
 ):
-    input_tensor, target_tensor, dataset_name = data_loader.dataset[idx]
+    input_tensor, target_tensor, _, _, dataset_name = data_loader.dataset[idx]
 
     if torch.cuda.is_available():
         input_tensor = input_tensor.to(torch.device(os.environ["DEVICE"]))
@@ -398,13 +412,14 @@ def get_pred(
 def inference(
     model: EncoderDecoderRNN | EncoderDecoderTransformer,
     input_tensor: torch.tensor,
+    combined_tensor: Optional[torch.tensor] = None,
     input_lengths: Optional[list[int]] = None,
     target_tensor: Optional[torch.Tensor] = None,
     max_new_tokens: Optional[int] = None
  ):
     if isinstance(model, EncoderDecoderRNN):
         logits, decoder_hidden, decoder_attn = model(
-            x=input_tensor, input_lengths=input_lengths, target_tensor=target_tensor
+            x=input_tensor, input_lengths=input_lengths,
         )
         probs = F.softmax(logits, dim=-1)
         _, topi = probs.topk(1)
@@ -414,13 +429,17 @@ def inference(
             if isinstance(model.module if isinstance(model, DistributedDataParallel) else model, EncoderDecoderTransformer):
                 logits = model(x=input_tensor, targets=target_tensor)
             elif isinstance(model.module if isinstance(model, DistributedDataParallel) else model, DecoderTransformer):
-                tgt_key_padding_mask = (input_tensor != PAD_ID).bool()
-                logits = model(x=input_tensor, tgt_key_padding_mask=tgt_key_padding_mask)
+                tgt_key_padding_mask = (combined_tensor != PAD_ID).bool()
+                logits = model(x=combined_tensor, tgt_key_padding_mask=tgt_key_padding_mask)
             else:
                 raise ValueError(f'unknown model type {type(model.module if isinstance(model, DistributedDataParallel) else model)}')
-            probs = F.softmax(logits, dim=-1)
-            _, topi = probs.topk(1)
-            decoded_ids = topi.squeeze()
+
+            if isinstance(model.module if isinstance(model, DistributedDataParallel) else model, DecoderTransformer):
+                decoded_ids, _ = model.generate(x=input_tensor, top_k=1, max_new_tokens=max_new_tokens)
+            else:
+                probs = F.softmax(logits, dim=-1)
+                _, topi = probs.topk(1)
+                decoded_ids = topi.squeeze()
         else:
             if isinstance(model, torch.nn.parallel.DistributedDataParallel):
                 model = model.module

@@ -63,9 +63,12 @@ class SentencePairsDataset(Dataset):
         target = self._transform(target_ids)
 
         if self._combine_source_and_target:
-            source = torch.cat([source, target])
-            target = torch.cat([source[1:], torch.tensor([PAD_ID])])   # shift 1 to the right
-        return source, target, dataset_name
+            combined = torch.cat([source, target])
+            combined_target = torch.cat([combined[1:], torch.tensor([PAD_ID])])   # shift 1 to the right
+        else:
+            combined = None
+            combined_target = None
+        return source, target, combined, combined_target, dataset_name
 
     def _get_transform(self, max_len: Optional[int] = None):
         """

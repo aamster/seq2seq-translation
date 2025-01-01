@@ -33,7 +33,7 @@ class CollateFunction:
     def __call__(self, batch):
         src_lengths = [len(x[0]) for x in batch]
 
-        src_batch, target_batch, dataset_name = zip(*batch)
+        src_batch, target_batch, combined_batch, combined_target_batch, dataset_name = zip(*batch)
         src_batch_padded = torch.nn.utils.rnn.pad_sequence(
             src_batch, batch_first=True, padding_value=self._pad_token_id
         )
@@ -41,4 +41,15 @@ class CollateFunction:
             target_batch, batch_first=True, padding_value=self._pad_token_id
         )
 
-        return src_batch_padded, target_batch_padded, dataset_name, src_lengths
+        if all(x is None for x in combined_batch):
+            combined_batch_padded = None
+            combined_target_batch_padded = None
+        else:
+            combined_batch_padded = torch.nn.utils.rnn.pad_sequence(
+                combined_batch, batch_first=True, padding_value=self._pad_token_id
+            )
+            combined_target_batch_padded = torch.nn.utils.rnn.pad_sequence(
+                combined_target_batch, batch_first=True, padding_value=self._pad_token_id
+            )
+
+        return src_batch_padded, target_batch_padded, combined_batch_padded, combined_target_batch_padded, dataset_name, src_lengths
