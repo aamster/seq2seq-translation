@@ -158,6 +158,7 @@ def main(config: RNNConfig | TransformerConfig):
             source_tokenizer=source_tokenizer,
             target_tokenizer=target_tokenizer,
             combined_tokenizer=combined_tokenizer,
+            combine_source_and_target=config.decoder_only,
             # TODO would be better if didn't have to truncate
             # consider chunking?
             max_length=config.max_input_length,
@@ -176,6 +177,7 @@ def main(config: RNNConfig | TransformerConfig):
             source_tokenizer=source_tokenizer,
             target_tokenizer=target_tokenizer,
             combined_tokenizer=combined_tokenizer,
+            combine_source_and_target=config.decoder_only,
             max_length=None,
         )
 
@@ -374,7 +376,8 @@ def main(config: RNNConfig | TransformerConfig):
                 target_tokenizer=target_tokenizer,
                 learning_rate=config.learning_rate,
                 decay_learning_rate=config.decay_learning_rate,
-                eval_interval=config.eval_interval,
+                loss_eval_interval=config.loss_eval_interval,
+                accuracy_eval_interval=config.accuracy_eval_interval,
                 eval_iters=config.eval_iters,
                 label_smoothing=config.label_smoothing,
                 use_mixed_precision=config.use_mixed_precision,

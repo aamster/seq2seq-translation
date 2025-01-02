@@ -32,7 +32,8 @@ class Config(BaseModel):
     weight_decay: float = 0.0
     compile: bool = False
     decay_learning_rate: bool = True
-    eval_interval: int = 2000
+    loss_eval_interval: int = 2000
+    accuracy_eval_interval: int = 10000
     eval_iters: int = 200
     eval_out_path: Optional[Path] = None
     is_test: bool = False

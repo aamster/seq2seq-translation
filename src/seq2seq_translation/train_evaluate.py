@@ -106,7 +106,8 @@ def estimate_performance_metrics(
     model: EncoderDecoderRNN | EncoderDecoderTransformer,
     epoch: int,
     eval_iters: int = 200,
-    max_new_tokens: Optional[int] = None
+    max_new_tokens: Optional[int] = None,
+    estimate_bleu: bool = True
 ):
     out = {"train": {}, "val": {}}
     model.eval()
@@ -182,32 +183,36 @@ def estimate_performance_metrics(
                 target_tensor=target_tensor if data_loader_name == "train" else None,
                 combined_tensor=combined_tensor,
                 input_lengths=input_lengths,
-                max_new_tokens=max_new_tokens
+                max_new_tokens=max_new_tokens,
+                do_test_time_inference=estimate_bleu and data_loader_name == "val"
             )
 
-            if data_loader_name == "train":
-                loss = _compute_loss(logits, combined_target_tensor if combined_target_tensor is not None else target_tensor, criterion, train_loader)
-                local_losses[eval_iter] = loss
+            loss = _compute_loss(logits, combined_target_tensor if combined_target_tensor is not None else target_tensor, criterion, train_loader)
+            local_losses[eval_iter] = loss
 
-            bleu_score = _compute_bleu_score(
-                decoded_ids=decoded_ids, target_tensor=target_tensor, tokenizer=target_tokenizer
-            )
-            local_bleu_scores[eval_iter] = bleu_score
+            if estimate_bleu:
+                bleu_score = _compute_bleu_score(
+                    decoded_ids=decoded_ids, target_tensor=target_tensor, tokenizer=target_tokenizer
+                )
+                local_bleu_scores[eval_iter] = bleu_score
 
-        # Aggregate metrics across processes
-        if torch.distributed.is_initialized():
-            avg_bleu = _aggregate_metric(local_bleu_scores)
-        else:
-            avg_bleu = local_bleu_scores.mean()
-
-        if data_loader_name == "train":
+        if estimate_bleu:
+            # Aggregate metrics across processes
             if torch.distributed.is_initialized():
-                avg_loss = _aggregate_metric(local_losses)
+                avg_bleu = _aggregate_metric(local_bleu_scores)
             else:
-                avg_loss = local_losses.mean()
-            out[data_loader_name] = {"loss": avg_loss, "bleu_score": avg_bleu}
+                avg_bleu = local_bleu_scores.mean()
         else:
-            out[data_loader_name] = {"bleu_score": avg_bleu}
+            avg_bleu = None
+
+        if torch.distributed.is_initialized():
+            avg_loss = _aggregate_metric(local_losses)
+        else:
+            avg_loss = local_losses.mean()
+        out[data_loader_name] = {"loss": avg_loss, "bleu_score": avg_bleu}
+
+        if data_loader_name == 'val':
+            out['val']['bleu_score'] = avg_bleu
             if is_master_process():
                 decoded_input, predicted_target, decoded_target, dataset_name = (
                     get_pred(
@@ -241,7 +246,8 @@ def train_epoch(
     best_bleu_score: float,
     decay_learning_rate: bool = True,
     learning_rate_decay_config: Optional[LearningRateDecayConfig] = None,
-    eval_interval: int = 2000,
+    loss_eval_interval: int = 2000,
+    accuracy_eval_interval: int = 10000,
     eval_iters: int = 200,
     use_mixed_precision: bool = True,
     autocast_context: ContextManager = nullcontext(),
@@ -288,7 +294,7 @@ def train_epoch(
         else:
             lr = optimizer.lr
 
-        if global_iter_num % eval_interval == 0:
+        if global_iter_num % loss_eval_interval == 0:
             if is_master_process():
                 logger.info("Calculating performance metrics")
             with autocast_context:
@@ -299,15 +305,23 @@ def train_epoch(
                     model=model,
                     eval_iters=eval_iters,
                     epoch=epoch,
-                    max_new_tokens=max_new_inference_tokens
+                    max_new_tokens=max_new_inference_tokens,
+                    estimate_bleu=global_iter_num % accuracy_eval_interval == 0
                 )
 
             if is_master_process():
-                logger.info(
-                    f"step {global_iter_num}: train loss {metrics['train']['loss']:.4f}, "
-                    f"train bleu {metrics['train']['bleu_score']:.4f}, "
-                    f"val bleu {metrics['val']['bleu_score']:.4f}"
-                )
+                if global_iter_num % accuracy_eval_interval == 0:
+                    logger.info(
+                        f"step {global_iter_num}: train loss {metrics['train']['loss']:.4f}, "
+                        f"val loss {metrics['val']['loss']:.4f}, "
+                        f"train bleu {metrics['train']['bleu_score']:.4f}, "
+                        f"val bleu {metrics['val']['bleu_score']:.4f}"
+                    )
+                else:
+                    logger.info(
+                        f"step {global_iter_num}: train loss {metrics['train']['loss']:.4f}, "
+                        f"val loss {metrics['val']['loss']:.4f}"
+                    )
                 if os.environ.get("USE_WANDB") == "True":
                     wandb.log(
                         {
@@ -319,15 +333,16 @@ def train_epoch(
                         }
                     )
 
-                if metrics["val"]["bleu_score"] > best_bleu_score:
-                    best_bleu_score = metrics["val"]["bleu_score"]
-                    checkpoint = {
-                        "model": model.state_dict(),
-                        "optimizer": optimizer.state_dict(),
-                        "iter_num": global_iter_num,
-                        "best_bleu_score": best_bleu_score,
-                    }
-                    torch.save(checkpoint, Path(model_weights_out_dir) / "ckpt.pt")
+                if global_iter_num % accuracy_eval_interval == 0:
+                    if metrics["val"]["bleu_score"] > best_bleu_score:
+                        best_bleu_score = metrics["val"]["bleu_score"]
+                        checkpoint = {
+                            "model": model.state_dict(),
+                            "optimizer": optimizer.state_dict(),
+                            "iter_num": global_iter_num,
+                            "best_bleu_score": best_bleu_score,
+                        }
+                        torch.save(checkpoint, Path(model_weights_out_dir) / "ckpt.pt")
 
         with autocast_context:
             if isinstance(model, EncoderDecoderRNN):
@@ -399,7 +414,9 @@ def get_pred(
         model=model,
         input_tensor=input_tensor.reshape(1, -1),
         input_lengths=[len(input_tensor)],
-        max_new_tokens=max_new_tokens
+        max_new_tokens=max_new_tokens,
+        do_test_time_inference=True,
+        get_input_logits=False
     )
 
     input = source_tokenizer.decode(input_tensor)
@@ -410,12 +427,14 @@ def get_pred(
 
 @torch.no_grad()
 def inference(
-    model: EncoderDecoderRNN | EncoderDecoderTransformer,
+    model: EncoderDecoderRNN | EncoderDecoderTransformer | DecoderTransformer,
     input_tensor: torch.tensor,
     combined_tensor: Optional[torch.tensor] = None,
     input_lengths: Optional[list[int]] = None,
     target_tensor: Optional[torch.Tensor] = None,
-    max_new_tokens: Optional[int] = None
+    max_new_tokens: Optional[int] = None,
+    do_test_time_inference: bool = True,
+    get_input_logits: bool = True
  ):
     if isinstance(model, EncoderDecoderRNN):
         logits, decoder_hidden, decoder_attn = model(
@@ -425,28 +444,32 @@ def inference(
         _, topi = probs.topk(1)
         decoded_ids = topi.squeeze()
     else:
-        if target_tensor is not None:
-            if isinstance(model.module if isinstance(model, DistributedDataParallel) else model, EncoderDecoderTransformer):
+        logits, decoded_ids = None, None
+
+        if get_input_logits:
+            # get logits, decoded_ids using target as "teacher"
+            # easier/quicker than test-time inference, since already have the target sequence
+            if isinstance(model.module if isinstance(model, DistributedDataParallel) else model,
+                          EncoderDecoderTransformer):
                 logits = model(x=input_tensor, targets=target_tensor)
-            elif isinstance(model.module if isinstance(model, DistributedDataParallel) else model, DecoderTransformer):
+            elif isinstance(model.module if isinstance(model, DistributedDataParallel) else model,
+                            DecoderTransformer):
                 tgt_key_padding_mask = (combined_tensor != PAD_ID).bool()
                 logits = model(x=combined_tensor, tgt_key_padding_mask=tgt_key_padding_mask)
             else:
-                raise ValueError(f'unknown model type {type(model.module if isinstance(model, DistributedDataParallel) else model)}')
+                raise ValueError(
+                    f'unknown model type {type(model.module if isinstance(model, DistributedDataParallel) else model)}')
 
-            if isinstance(model.module if isinstance(model, DistributedDataParallel) else model, DecoderTransformer):
-                if isinstance(model, torch.nn.parallel.DistributedDataParallel):
-                    model = model.module
-                decoded_ids, _ = model.generate(x=input_tensor, top_k=1, max_new_tokens=max_new_tokens)
-            else:
+        if do_test_time_inference:
+            if isinstance(model, torch.nn.parallel.DistributedDataParallel):
+                model = model.module
+            decoded_ids, _ = model.generate(x=input_tensor, top_k=1, max_new_tokens=max_new_tokens)
+        else:
+            if get_input_logits:
                 probs = F.softmax(logits, dim=-1)
                 _, topi = probs.topk(1)
                 decoded_ids = topi.squeeze()
-        else:
-            if isinstance(model, torch.nn.parallel.DistributedDataParallel):
-                model = model.module
 
-            decoded_ids, logits = model.generate(x=input_tensor, top_k=1, max_new_tokens=max_new_tokens)
         decoder_hidden, decoder_attn = None, None
 
     return logits, decoder_hidden, decoder_attn, decoded_ids
@@ -525,7 +548,8 @@ def train(
     model_weights_out_dir: str,
     learning_rate=0.001,
     decay_learning_rate: bool = True,
-    eval_interval: int = 2000,
+    loss_eval_interval: int = 2000,
+    accuracy_eval_interval: int = 10000,
     eval_iters: int = 200,
     label_smoothing: float = 0.0,
     use_mixed_precision: bool = True,
@@ -558,7 +582,8 @@ def train(
             best_bleu_score=best_bleu_score,
             model_weights_out_dir=Path(model_weights_out_dir),
             eval_iters=eval_iters,
-            eval_interval=eval_interval,
+            loss_eval_interval=loss_eval_interval,
+            accuracy_eval_interval=accuracy_eval_interval,
             use_mixed_precision=use_mixed_precision,
             autocast_context=autocast_context,
             max_new_inference_tokens=max_new_inference_tokens
