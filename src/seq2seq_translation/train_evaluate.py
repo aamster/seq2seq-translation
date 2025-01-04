@@ -42,6 +42,18 @@ class LearningRateDecayConfig:
     min_lr: float = 5e-5  # should be ~= learning_rate/10 per Chinchilla
 
 
+def _unwrap_model(m):
+    """Unwrap any DDP or OptimizedModule wrappers to get the original model."""
+    # Unwrap DDP
+    if isinstance(m, DistributedDataParallel):
+        m = m.module
+
+    # Unwrap torch.compile() wrapper
+    if isinstance(m, torch._dynamo.eval_frame.OptimizedModule):
+        m = m._orig_mod
+
+    return m
+
 def _compute_loss(
     logits: torch.tensor,
     target_tensor: torch.tensor,
@@ -350,9 +362,9 @@ def train_epoch(
                     x=input_tensor, input_lengths=input_lengths, target_tensor=target_tensor
                 )
             else:
-                if isinstance(model.module if isinstance(model, DistributedDataParallel) else model, EncoderDecoderTransformer):
+                if isinstance(_unwrap_model(m=model), EncoderDecoderTransformer):
                     logits = model(x=input_tensor, targets=target_tensor)
-                elif isinstance(model.module if isinstance(model, DistributedDataParallel) else model, DecoderTransformer):
+                elif isinstance(_unwrap_model(m=model), DecoderTransformer):
                     tgt_key_padding_mask = (combined_tensor != PAD_ID).bool()
                     logits = model(x=combined_tensor, tgt_key_padding_mask=tgt_key_padding_mask)
                 else:
@@ -449,20 +461,19 @@ def inference(
         if get_input_logits:
             # get logits, decoded_ids using target as "teacher"
             # easier/quicker than test-time inference, since already have the target sequence
-            if isinstance(model.module if isinstance(model, DistributedDataParallel) else model,
+            if isinstance(_unwrap_model(m=model),
                           EncoderDecoderTransformer):
                 logits = model(x=input_tensor, targets=target_tensor)
-            elif isinstance(model.module if isinstance(model, DistributedDataParallel) else model,
+            elif isinstance(_unwrap_model(m=model),
                             DecoderTransformer):
                 tgt_key_padding_mask = (combined_tensor != PAD_ID).bool()
                 logits = model(x=combined_tensor, tgt_key_padding_mask=tgt_key_padding_mask)
             else:
                 raise ValueError(
-                    f'unknown model type {type(model.module if isinstance(model, DistributedDataParallel) else model)}')
+                    f'unknown model type {type(_unwrap_model(m=model))}')
 
         if do_test_time_inference:
-            if isinstance(model, torch.nn.parallel.DistributedDataParallel):
-                model = model.module
+            model = _unwrap_model(m=model)
             decoded_ids, _ = model.generate(x=input_tensor, top_k=1, max_new_tokens=max_new_tokens)
         else:
             if get_input_logits:
