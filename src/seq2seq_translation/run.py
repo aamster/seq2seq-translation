@@ -181,14 +181,12 @@ def main(config: RNNConfig | TransformerConfig):
             max_length=None,
         )
 
-        collate_fn = CollateFunction(pad_token_id=PAD_ID)
-
         train_sampler = DistributedSampler(train_dset) if config.use_ddp else None
         train_data_loader = DataLoader(
             dataset=train_dset,
             shuffle=(train_sampler is None),
             batch_size=config.batch_size,
-            collate_fn=collate_fn,
+            collate_fn=CollateFunction(pad_token_id=PAD_ID, fixed_length=config.fixed_length),
             sampler=train_sampler,
             num_workers=config.num_train_dataloader_num_workers,
             pin_memory=True,
@@ -197,14 +195,14 @@ def main(config: RNNConfig | TransformerConfig):
             dataset=val_dset,
             shuffle=False,
             batch_size=config.batch_size,
-            collate_fn=collate_fn,
+            collate_fn=CollateFunction(pad_token_id=PAD_ID),
         )
         test_data_loader = DataLoader(
             dataset=test_dset,
             shuffle=False,
             sampler=DistributedSampler(test_dset) if config.use_ddp else None,
             batch_size=config.batch_size,
-            collate_fn=collate_fn,
+            collate_fn=CollateFunction(pad_token_id=PAD_ID),
         )
 
         device = "cuda" if torch.cuda.is_available() else "cpu"

@@ -1,5 +1,8 @@
+from typing import Optional
+
 import numpy as np
 import torch
+import torch.nn.functional as F
 
 
 class DataSplitter:
@@ -27,8 +30,9 @@ class DataSplitter:
 
 
 class CollateFunction:
-    def __init__(self, pad_token_id):
+    def __init__(self, pad_token_id, fixed_length: Optional[int] = None):
         self._pad_token_id = pad_token_id
+        self._fixed_length = fixed_length
 
     def __call__(self, batch):
         src_lengths = [len(x[0]) for x in batch]
@@ -51,5 +55,17 @@ class CollateFunction:
             combined_target_batch_padded = torch.nn.utils.rnn.pad_sequence(
                 combined_target_batch, batch_first=True, padding_value=self._pad_token_id
             )
+
+            if self._fixed_length is not None:
+                combined_batch_padded = F.pad(
+                    input=combined_batch_padded,
+                    pad=(0, self._fixed_length - combined_batch_padded.shape[1]),
+                    value=self._pad_token_id
+                )
+                combined_target_batch_padded = F.pad(
+                    input=combined_target_batch_padded,
+                    pad=(0, self._fixed_length - combined_target_batch_padded.shape[1]),
+                    value=self._pad_token_id
+                )
 
         return src_batch_padded, target_batch_padded, combined_batch_padded, combined_target_batch_padded, dataset_name, src_lengths

@@ -328,7 +328,7 @@ def train_epoch(
                             "iter": global_iter_num,
                             "lr": lr,
                             "train_cross_entropy_loss": metrics["train"]["loss"],
-                            "train_bleu_score": metrics["train"]["bleu_score"],
+                            "val_cross_entropy_loss": metrics["val"]["loss"],
                             "val_bleu_score": metrics["val"]["bleu_score"],
                         }
                     )

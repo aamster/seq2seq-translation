@@ -1,3 +1,5 @@
+from typing import Optional
+
 from seq2seq_translation.config._config import Config
 from seq2seq_translation.models.transformer.positional_encoding import PositionalEncodingType
 from seq2seq_translation.models.transformer.mlp import ActivationFunction
@@ -10,3 +12,4 @@ class TransformerConfig(Config):
     norm_first: bool = False
     activation: ActivationFunction = ActivationFunction.RELU
     positional_encoding_type: PositionalEncodingType = PositionalEncodingType.LEARNED
+    fixed_length: Optional[int] = None
