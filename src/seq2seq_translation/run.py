@@ -313,8 +313,7 @@ def main(config: RNNConfig | TransformerConfig):
 
             optimizer.load_state_dict(checkpoint["optimizer"])
 
-        if hasattr(model, 'num_params'):
-            logger.info(f'Model num params: {model.num_params / 1e6}M')
+        logger.info(f'Model num params: {model.num_params / 1e6}M')
 
         if config.compile:
             # requires PyTorch 2.0
