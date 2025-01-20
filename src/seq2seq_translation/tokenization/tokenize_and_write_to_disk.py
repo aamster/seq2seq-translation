@@ -74,8 +74,8 @@ def main(config_path: Path):
             source, target, dataset_name = datasets[idx]
             yield {'source': source, 'target': target}
 
-    train = Dataset.from_generator(lambda: dataset_gen(idxs=train_idxs), num_proc=os.cpu_count() // 2)
-    val = Dataset.from_generator(lambda: dataset_gen(idxs=test_idxs), num_proc=os.cpu_count() // 2)
+    train = Dataset.from_generator(lambda: dataset_gen(idxs=train_idxs))
+    val = Dataset.from_generator(lambda: dataset_gen(idxs=test_idxs))
 
     split_dataset = DatasetDict({'train': train, 'val': val})
 
@@ -104,7 +104,7 @@ def main(config_path: Path):
         offsets = np.zeros(len(dset) + 1, dtype=np.uint64)
         offsets[0] = 0
 
-        total_shards = min(1024, 4)
+        total_shards = 1024
         idx = 0            # Current position in arr (token-level)
         sample_idx = 0     # Current position in offsets (sample-level)
 
