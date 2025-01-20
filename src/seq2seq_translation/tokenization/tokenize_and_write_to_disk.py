@@ -86,8 +86,6 @@ def main(config_path: Path):
     )
 
     for split, dset in tokenized.items():
-        dset.set_format("numpy")
-
         total_tokens = np.sum(dset["len"], dtype=np.uint64)
         print(f"{split}: total tokens = {total_tokens}")
 
@@ -109,8 +107,7 @@ def main(config_path: Path):
         sample_idx = 0     # Current position in offsets (sample-level)
 
         for shard_idx in tqdm(range(total_shards), desc=f"Writing {split}"):
-            shard = dset.shard(num_shards=total_shards, index=shard_idx, contiguous=True)
-
+            shard = dset.shard(num_shards=total_shards, index=shard_idx, contiguous=True).with_format('numpy')
             shard_ids = shard["ids"]  # This is a list of lists/arrays of token IDs
             arr_batch = np.concatenate(shard_ids)
 
