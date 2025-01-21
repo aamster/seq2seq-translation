@@ -2,12 +2,14 @@ import argparse
 import json
 import os
 from dataclasses import dataclass
+from functools import partial
+from multiprocessing import Pool
 from pathlib import Path
+from typing import Optional
 
 from tqdm import tqdm
 import numpy as np
 import tiktoken
-from datasets import Dataset, DatasetDict
 
 from seq2seq_translation.data_loading import DataSplitter
 from seq2seq_translation.datasets.datasets import LanguagePairsDatasets
@@ -22,10 +24,82 @@ class Config:
     train_frac: float = 0.999
     tokenizer_type: str = 'tiktoken'
     max_len: int = 128
+    train_n_tokens: Optional[int] = None
+    val_n_tokens: Optional[int] = None
 
     def __post_init__(self):
         self.datasets_dir = Path(self.datasets_dir)
         self.out_dir = Path(self.out_dir)
+
+def process(source, target, enc, max_len: int = 128):
+    source_ids = enc.encode_ordinary(source)
+    target_ids = enc.encode_ordinary(target)
+
+    source_ids = source_ids[:max_len]
+    target_ids = target_ids[:max_len]
+
+    source_ids.append(enc.eot_token)
+    target_ids.append(enc.eot_token)
+
+    combined = source_ids + target_ids
+
+    return combined
+
+
+def tokenize(batch_idx: int, enc, datasets, dataset_len: int, batch_size: int = 1024):
+    start = batch_idx * batch_size
+    end = min(start + batch_size, dataset_len)
+    batch = [process(*datasets[i][:-1], enc=enc) for i in range(start, end)]
+    return batch, batch_idx
+
+def get_num_tokens_parallel(enc, datasets: LanguagePairsDatasets, idxs: np.ndarray, batch_size: int, num_batches: int):
+    tokenize_partial = partial(
+        tokenize, enc=enc, datasets=datasets, dataset_len=len(idxs), batch_size=batch_size
+    )
+
+    num_tokens = 0
+
+    batch_lens = np.zeros((num_batches,), dtype=np.int64)
+
+    with Pool(os.cpu_count()) as pool:
+        with tqdm(total=num_batches, desc="Getting num tokens") as pbar:
+            for result in pool.imap_unordered(tokenize_partial, range(num_batches)):
+                batch, batch_idx = result
+                batch_num_tokens = sum([len(x) for x in batch])
+                num_tokens += batch_num_tokens
+                batch_lens[batch_idx] = batch_num_tokens
+                pbar.update(1)
+    return num_tokens, batch_lens
+
+def write_tokens_to_memmap_parallel(enc, datasets: LanguagePairsDatasets, idxs: np.ndarray, batch_size: int, num_batches: int, arr: np.memmap, batch_lens: np.ndarray):
+    tokenize_partial = partial(
+        tokenize, enc=enc, datasets=datasets, dataset_len=len(idxs), batch_size=batch_size
+    )
+
+    offsets = np.zeros(len(idxs) + 1, dtype=np.uint64)
+    offsets[0] = 0
+
+    with Pool(os.cpu_count()) as pool:
+        with tqdm(total=num_batches, desc="Writing to memmap") as pbar:
+            for result in pool.imap_unordered(tokenize_partial, range(num_batches)):
+                batch, batch_idx = result
+                arr_batch = np.concatenate(batch)
+                batch_start = batch_lens[:batch_idx].sum()
+
+                arr[batch_start:batch_start + len(arr_batch)] = arr_batch
+
+                for seq_idx, seq in enumerate(batch):
+                    sample_idx = seq_idx + batch_idx * batch_size
+                    offsets[sample_idx + 1] = offsets[sample_idx] + len(seq)
+                pbar.update(1)
+    return arr, offsets
+
+def write_tokens_to_memmap(batch: list[dict], start_idx, memmap: np.memmap):
+    position = start_idx
+    for tokens in batch:
+        memmap[position:position + len(tokens)] = tokens
+        position += len(tokens)
+    memmap.flush()
 
 def main(config_path: Path):
     with open(config_path) as f:
@@ -50,81 +124,39 @@ def main(config_path: Path):
     else:
         raise NotImplemented
 
-    def process(example):
-        source = example['source']
-        target = example['target']
+    batch_size = 2**18
 
-        source_ids = enc.encode_ordinary(source)
-        target_ids = enc.encode_ordinary(target)
+    for split_name, idxs in (('train', train_idxs), ('val', test_idxs)):
+        num_batches = (len(idxs) + batch_size - 1) // batch_size
 
-        source_ids = source_ids[:config.max_len]
-        target_ids = target_ids[:config.max_len]
+        if config.train_n_tokens is None and config.val_n_tokens is None:
+            num_tokens, batch_lens = get_num_tokens_parallel(
+                enc=enc,
+                datasets=datasets,
+                idxs=idxs,
+                batch_size=batch_size,
+                num_batches=num_batches
+            )
+            np.save(config.out_dir / f'{split_name}_batch_lens.npy', batch_lens)
+        else:
+            num_tokens = config.train_n_tokens if split_name == 'train' else config.val_n_tokens
+        print(f'{split_name} num tokens: {num_tokens}')
 
-        source_ids.append(enc.eot_token)
-        target_ids.append(enc.eot_token)
+        arr = np.memmap(config.out_dir / f'{split_name}.bin', dtype=np.uint16, mode='w+', shape=(num_tokens,))
 
-        combined = source_ids + target_ids
-
-        out = {'ids': combined, 'len': len(combined)}
-        return out
-
-
-    def dataset_gen(idxs: np.ndarray):
-        for idx in idxs:
-            source, target, dataset_name = datasets[idx]
-            yield {'source': source, 'target': target}
-
-    train = Dataset.from_generator(lambda: dataset_gen(idxs=train_idxs))
-    val = Dataset.from_generator(lambda: dataset_gen(idxs=test_idxs))
-
-    split_dataset = DatasetDict({'train': train, 'val': val})
-
-    tokenized = split_dataset.map(
-        process,
-        desc="tokenizing the splits",
-        num_proc=os.cpu_count() // 2,
-    )
-
-    for split, dset in tokenized.items():
-        total_tokens = np.sum(dset["len"], dtype=np.uint64)
-        print(f"{split}: total tokens = {total_tokens}")
-
-        dtype = np.uint16  # Safe since the GPT2 vocab size (50257 incl. EOT) < 65536
-        arr = np.memmap(
-            filename=config.out_dir / f"{split}.bin",
-            dtype=dtype,
-            mode="w+",
-            shape=(total_tokens,),
+        arr, offsets = write_tokens_to_memmap_parallel(
+            enc=enc,
+            datasets=datasets,
+            idxs=idxs,
+            batch_size=batch_size,
+            num_batches=num_batches,
+            arr=arr,
+            batch_lens=np.load(config.out_dir / f'{split_name}_batch_lens.npy')
         )
 
-        # Prepare offsets array for each sample. offsets[i] = starting index of sample i in arr
-        # => offsets[len(dset)] will be total_tokens.
-        offsets = np.zeros(len(dset) + 1, dtype=np.uint64)
-        offsets[0] = 0
-
-        total_shards = 1024
-        idx = 0            # Current position in arr (token-level)
-        sample_idx = 0     # Current position in offsets (sample-level)
-
-        for shard_idx in tqdm(range(total_shards), desc=f"Writing {split}"):
-            shard = dset.shard(num_shards=total_shards, index=shard_idx, contiguous=True).with_format('numpy')
-            shard_ids = shard["ids"]  # This is a list of lists/arrays of token IDs
-            arr_batch = np.concatenate(shard_ids)
-
-            # Write the tokens in this shard to the memmap
-            arr[idx : idx + len(arr_batch)] = arr_batch
-            idx += len(arr_batch)
-
-            # Update offsets for each sample in this shard
-            for seq in shard_ids:
-                offsets[sample_idx + 1] = offsets[sample_idx] + len(seq)
-                sample_idx += 1
-
-        # Make sure everything is written to disk
         arr.flush()
 
-        # Save the offsets array
-        np.save(config.out_dir / f"{split}_offsets.npy", offsets)
+        np.save(config.out_dir / f"{split_name}_offsets.npy", offsets)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
