@@ -26,6 +26,8 @@ class Config:
     max_len: int = 128
     train_n_tokens: Optional[int] = None
     val_n_tokens: Optional[int] = None
+    batch_size: int = 2**18
+    num_workers: int = os.cpu_count()
 
     def __post_init__(self):
         self.datasets_dir = Path(self.datasets_dir)
@@ -71,7 +73,7 @@ def get_num_tokens_parallel(enc, datasets: LanguagePairsDatasets, idxs: np.ndarr
                 pbar.update(1)
     return num_tokens, batch_lens
 
-def write_tokens_to_memmap_parallel(enc, datasets: LanguagePairsDatasets, idxs: np.ndarray, batch_size: int, num_batches: int, arr: np.memmap, batch_lens: np.ndarray):
+def write_tokens_to_memmap_parallel(enc, datasets: LanguagePairsDatasets, idxs: np.ndarray, batch_size: int, num_batches: int, arr: np.memmap, batch_lens: np.ndarray, num_workers: int):
     tokenize_partial = partial(
         tokenize, enc=enc, datasets=datasets, dataset_len=len(idxs), batch_size=batch_size
     )
@@ -79,7 +81,7 @@ def write_tokens_to_memmap_parallel(enc, datasets: LanguagePairsDatasets, idxs: 
     offsets = np.zeros(len(idxs) + 1, dtype=np.uint64)
     offsets[0] = 0
 
-    with Pool(os.cpu_count() // 2) as pool:
+    with Pool(num_workers) as pool:
         with tqdm(total=num_batches, desc="Writing to memmap") as pbar:
             for result in pool.imap_unordered(tokenize_partial, range(num_batches)):
                 batch, batch_idx = result
@@ -124,17 +126,15 @@ def main(config_path: Path):
     else:
         raise NotImplemented
 
-    batch_size = 2**18
-
     for split_name, idxs in (('train', train_idxs), ('val', test_idxs)):
-        num_batches = (len(idxs) + batch_size - 1) // batch_size
+        num_batches = (len(idxs) + config.batch_size - 1) // config.batch_size
 
         if config.train_n_tokens is None and config.val_n_tokens is None:
             num_tokens, batch_lens = get_num_tokens_parallel(
                 enc=enc,
                 datasets=datasets,
                 idxs=idxs,
-                batch_size=batch_size,
+                batch_size=config.batch_size,
                 num_batches=num_batches
             )
             np.save(config.out_dir / f'{split_name}_batch_lens.npy', batch_lens)
@@ -148,10 +148,11 @@ def main(config_path: Path):
             enc=enc,
             datasets=datasets,
             idxs=idxs,
-            batch_size=batch_size,
+            batch_size=config.batch_size,
             num_batches=num_batches,
             arr=arr,
-            batch_lens=np.load(config.out_dir / f'{split_name}_batch_lens.npy')
+            batch_lens=np.load(config.out_dir / f'{split_name}_batch_lens.npy'),
+            num_workers=config.num_workers
         )
 
         arr.flush()
