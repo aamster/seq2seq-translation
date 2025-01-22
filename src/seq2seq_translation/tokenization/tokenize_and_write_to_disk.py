@@ -61,7 +61,7 @@ def get_num_tokens_parallel(enc, datasets: LanguagePairsDatasets, idxs: np.ndarr
 
     batch_lens = np.zeros((num_batches,), dtype=np.int64)
 
-    with Pool(os.cpu_count()) as pool:
+    with Pool(os.cpu_count() // 2) as pool:
         with tqdm(total=num_batches, desc="Getting num tokens") as pbar:
             for result in pool.imap_unordered(tokenize_partial, range(num_batches)):
                 batch, batch_idx = result
@@ -79,7 +79,7 @@ def write_tokens_to_memmap_parallel(enc, datasets: LanguagePairsDatasets, idxs: 
     offsets = np.zeros(len(idxs) + 1, dtype=np.uint64)
     offsets[0] = 0
 
-    with Pool(os.cpu_count()) as pool:
+    with Pool(os.cpu_count() // 2) as pool:
         with tqdm(total=num_batches, desc="Writing to memmap") as pbar:
             for result in pool.imap_unordered(tokenize_partial, range(num_batches)):
                 batch, batch_idx = result
