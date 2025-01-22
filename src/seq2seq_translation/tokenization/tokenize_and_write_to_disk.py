@@ -54,7 +54,7 @@ def tokenize(batch_idx: int, enc, datasets, dataset_len: int, batch_size: int = 
     batch = [process(*datasets[i][:-1], enc=enc) for i in range(start, end)]
     return batch, batch_idx
 
-def get_num_tokens_parallel(enc, datasets: LanguagePairsDatasets, idxs: np.ndarray, batch_size: int, num_batches: int):
+def get_num_tokens_parallel(enc, datasets: LanguagePairsDatasets, idxs: np.ndarray, batch_size: int, num_batches: int, num_workers: int):
     tokenize_partial = partial(
         tokenize, enc=enc, datasets=datasets, dataset_len=len(idxs), batch_size=batch_size
     )
@@ -63,7 +63,7 @@ def get_num_tokens_parallel(enc, datasets: LanguagePairsDatasets, idxs: np.ndarr
 
     batch_lens = np.zeros((num_batches,), dtype=np.int64)
 
-    with Pool(os.cpu_count() // 2) as pool:
+    with Pool(num_workers) as pool:
         with tqdm(total=num_batches, desc="Getting num tokens") as pbar:
             for result in pool.imap_unordered(tokenize_partial, range(num_batches)):
                 batch, batch_idx = result
@@ -135,7 +135,8 @@ def main(config_path: Path):
                 datasets=datasets,
                 idxs=idxs,
                 batch_size=config.batch_size,
-                num_batches=num_batches
+                num_batches=num_batches,
+                num_workers=config.num_workers
             )
             np.save(config.out_dir / f'{split_name}_batch_lens.npy', batch_lens)
         else:
