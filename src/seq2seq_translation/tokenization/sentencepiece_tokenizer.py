@@ -6,9 +6,6 @@ import sentencepiece as spm
 import torch
 
 
-EOS_ID = 2
-PAD_ID = 3
-
 class SentencePieceTokenizer:
     def __init__(
         self,
@@ -48,8 +45,8 @@ class SentencePieceTokenizer:
             # special tokens
             unk_id=0,  # the UNK token MUST exist
             bos_id=1,  # the others are optional, set to -1 to turn off
-            eos_id=EOS_ID,
-            pad_id=PAD_ID,
+            eos_id=self.eot_idx,
+            pad_id=self.pad_idx,
             # systems
             num_threads=os.cpu_count(),  # use ~all system resources
         )
@@ -63,6 +60,14 @@ class SentencePieceTokenizer:
             if vocab_size is None:
                 raise ValueError("Must provide vocab_size if training")
             self.train()
+
+    @property
+    def pad_idx(self) -> int:
+        return 3
+
+    @property
+    def eot_idx(self) -> int:
+        return 2
 
     @property
     def processor(self):

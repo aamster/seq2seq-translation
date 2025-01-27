@@ -13,10 +13,10 @@ from loguru import logger
 from torch import optim
 from torch.utils.data import DataLoader, DistributedSampler
 
-from seq2seq_translation.config._config import ModelType
+from seq2seq_translation.config._config import ModelType, TokenizerType
 from seq2seq_translation.config.rnn_config import RNNConfig
 from seq2seq_translation.config.transformer_config import TransformerConfig
-from seq2seq_translation.data_loading import DataSplitter, CollateFunction
+from seq2seq_translation.data_loading import CollateFunction
 from seq2seq_translation.datasets.datasets import LanguagePairsDatasets
 from seq2seq_translation.inference import (
     BeamSearchSequenceGenerator,
@@ -24,9 +24,10 @@ from seq2seq_translation.inference import (
 )
 from seq2seq_translation.models.transformer.decoder import DecoderTransformer
 from seq2seq_translation.models.transformer.encoder_decoder import EncoderDecoderTransformer
-from seq2seq_translation.sentence_pairs_dataset import SentencePairsDataset
+from seq2seq_translation.sentence_pairs_dataset import SentencePairsDataset, \
+    SentencePairsDatasetFromPreprocessedTokens
 from seq2seq_translation.tokenization.sentencepiece_tokenizer import (
-    SentencePieceTokenizer, PAD_ID,
+    SentencePieceTokenizer,
 )
 from seq2seq_translation.models.rnn import (
     EncoderRNN,
@@ -34,6 +35,7 @@ from seq2seq_translation.models.rnn import (
     AttnDecoderRNN,
     EncoderDecoderRNN,
 )
+from seq2seq_translation.tokenization.tiktoken_tokenizer import TikTokenTokenizer
 from seq2seq_translation.train_evaluate import train, evaluate
 from seq2seq_translation.utils.ddp_utils import (
     DistributedContextManager,
@@ -99,40 +101,47 @@ def main(config: RNNConfig | TransformerConfig):
         else:
             rng = None
 
-        datasets = LanguagePairsDatasets(
-            out_dir=Path(config.datasets_dir),
-            source_lang=config.source_lang,
-            target_lang=config.target_lang,
-            is_test=False,
-        )
-        splitter = DataSplitter(
-            n_examples=len(datasets), train_frac=config.train_frac, rng=rng
-        )
-        train_idxs, test_idxs = splitter.split()
+        train_offsets = np.load(config.tokenized_dir / 'train_offsets.npy')
+        train_tokenized = np.memmap(config.tokenized_dir / 'train.bin', dtype=np.uint16)
+
+        val_offsets = np.load(config.tokenized_dir / 'val_offsets.npy')
+        val_tokenized = np.memmap(config.tokenized_dir / 'val.bin', dtype=np.uint16)
+
+        # -1 because it goes until 1 past the last sequence
+        train_idxs = np.arange(len(train_offsets)-1)
+        rng.shuffle(train_idxs)
+
+        # -1 because it goes until 1 past the last sequence
+        test_idxs = np.arange(len(val_offsets)-1)
+        rng.shuffle(test_idxs)
 
         if config.decoder_only:
-            combined_tokenizer = SentencePieceTokenizer(
-                model_prefix=str(Path(config.sentence_piece_model_dir) / Path(config.sentence_piece_model_dir).name)
-            )
-            logger.info(f'{combined_tokenizer.processor.vocab_size()} tokens')
-            source_tokenizer, target_tokenizer = None, None
-        else:
-            source_tokenizer_model_path = (
-                    Path(config.sentence_piece_model_dir) / f"{config.source_lang}"
-            )
-            target_tokenizer_model_path = (
-                    Path(config.sentence_piece_model_dir) / f"{config.target_lang}"
-            )
-            source_tokenizer = SentencePieceTokenizer(
-                model_prefix=str(source_tokenizer_model_path)
-            )
+            if config.tokenizer_type == TokenizerType.SENTENCEPIECE:
+                tokenizer = SentencePieceTokenizer(
+                    model_prefix=str(Path(config.sentence_piece_model_dir) / Path(config.sentence_piece_model_dir).name)
+                )
+                eot_token_id = tokenizer.processor.eos_id()
+                logger.info(f'{tokenizer.processor.vocab_size()} tokens')
+            else:
+                tokenizer = TikTokenTokenizer()
+                eot_token_id = tokenizer.tokenizer.eot_token
+                logger.info(f'{tokenizer.vocab_size} vocab size')
 
-            target_tokenizer = SentencePieceTokenizer(
-                model_prefix=str(target_tokenizer_model_path)
-            )
-            combined_tokenizer = None
-            logger.info(f"{source_tokenizer.processor.vocab_size()} source tokens")
-            logger.info(f"{target_tokenizer.processor.vocab_size()} target tokens")
+        else:
+            if config.tokenizer_type == TokenizerType.SENTENCEPIECE:
+                tokenizer_model_path = (
+                        Path(config.sentence_piece_model_dir)
+                )
+                tokenizer = SentencePieceTokenizer(
+                    model_prefix=str(tokenizer_model_path)
+                )
+
+                eot_token_id = tokenizer.processor.eos_id()
+                logger.info(f"{tokenizer.processor.vocab_size()} vocab size")
+            else:
+                tokenizer = TikTokenTokenizer()
+                eot_token_id = tokenizer.tokenizer.eot_token
+                logger.info(f"{tokenizer.vocab_size} vocab size")
 
 
         if config.limit is not None:
@@ -141,52 +150,49 @@ def main(config: RNNConfig | TransformerConfig):
             print(f"Number of train examples after limiting: {len(train_idxs)}")
             print(f"Number of val examples after limiting: {len(test_idxs)}")
 
-        train_dset = SentencePairsDataset(
-            datasets=datasets,
+        train_dset = SentencePairsDatasetFromPreprocessedTokens(
             idxs=train_idxs,
-            source_tokenizer=source_tokenizer,
-            target_tokenizer=target_tokenizer,
-            combined_tokenizer=combined_tokenizer,
             combine_source_and_target=config.decoder_only,
-            # TODO would be better if didn't have to truncate
-            # consider chunking?
-            max_length=config.max_input_length,
+            tokenized_offsets=train_offsets,
+            tokenized=train_tokenized,
+            eot_token_id=eot_token_id,
+            pad_token_id=tokenizer.pad_idx
         )
-        val_dset = SentencePairsDataset(
-            datasets=datasets,
+        val_dset = SentencePairsDatasetFromPreprocessedTokens(
             idxs=test_idxs,
-            source_tokenizer=source_tokenizer,
-            target_tokenizer=target_tokenizer,
-            combined_tokenizer=combined_tokenizer,
             combine_source_and_target=config.decoder_only,
-            # TODO would be better if didn't have to truncate
-            # consider chunking?
-            max_length=config.max_input_length,
+            tokenized_offsets=val_offsets,
+            tokenized=val_tokenized,
+            eot_token_id=eot_token_id,
+            pad_token_id=tokenizer.pad_idx
         )
 
-        test_datasets = LanguagePairsDatasets(
-            out_dir=Path(config.datasets_dir),
-            source_lang=config.source_lang,
-            target_lang=config.target_lang,
-            is_test=True,
-        )
+        if config.is_test:
+            test_datasets = LanguagePairsDatasets(
+                out_dir=Path(config.datasets_dir),
+                source_lang=config.source_lang,
+                target_lang=config.target_lang,
+                is_test=True,
+            )
 
-        test_dset = SentencePairsDataset(
-            datasets=test_datasets,
-            idxs=np.arange(len(test_datasets)),
-            source_tokenizer=source_tokenizer,
-            target_tokenizer=target_tokenizer,
-            combined_tokenizer=combined_tokenizer,
-            combine_source_and_target=config.decoder_only,
-            max_length=None,
-        )
+            test_dset = SentencePairsDataset(
+                datasets=test_datasets,
+                idxs=np.arange(len(test_datasets)),
+                combined_tokenizer=tokenizer,
+                combine_source_and_target=config.decoder_only,
+                max_length=None,
+                eos_token_id=eot_token_id,
+                pad_token_id=tokenizer.pad_idx
+            )
+        else:
+            test_datasets, test_dset = None, None
 
         train_sampler = DistributedSampler(train_dset) if config.use_ddp else None
         train_data_loader = DataLoader(
             dataset=train_dset,
             shuffle=(train_sampler is None),
             batch_size=config.batch_size,
-            collate_fn=CollateFunction(pad_token_id=PAD_ID, fixed_length=config.fixed_length),
+            collate_fn=CollateFunction(pad_token_id=tokenizer.pad_idx, fixed_length=config.fixed_length),
             sampler=train_sampler,
             num_workers=config.num_train_dataloader_num_workers,
             pin_memory=True,
@@ -195,14 +201,14 @@ def main(config: RNNConfig | TransformerConfig):
             dataset=val_dset,
             shuffle=False,
             batch_size=config.batch_size,
-            collate_fn=CollateFunction(pad_token_id=PAD_ID),
+            collate_fn=CollateFunction(pad_token_id=tokenizer.pad_idx),
         )
         test_data_loader = DataLoader(
             dataset=test_dset,
             shuffle=False,
             sampler=DistributedSampler(test_dset) if config.use_ddp else None,
             batch_size=config.batch_size,
-            collate_fn=CollateFunction(pad_token_id=PAD_ID),
+            collate_fn=CollateFunction(pad_token_id=tokenizer.pad_idx),
         )
 
         device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -216,11 +222,11 @@ def main(config: RNNConfig | TransformerConfig):
         if config.architecture_type == ModelType.RNN:
             assert isinstance(config, RNNConfig), "expected RNNConfig"
             encoder = EncoderRNN(
-                input_size=source_tokenizer.processor.vocab_size(),
+                input_size=tokenizer.processor.vocab_size(),
                 hidden_size=config.encoder_hidden_dim,
                 bidirectional=config.encoder_bidirectional,
                 freeze_embedding_layer=config.freeze_embedding_layer,
-                pad_idx=source_tokenizer.processor.pad_id(),
+                pad_idx=tokenizer.processor.pad_id(),
                 embedding_dim=config.embedding_size,
                 num_layers=config.num_layers,
                 dropout=config.dropout,
@@ -230,36 +236,36 @@ def main(config: RNNConfig | TransformerConfig):
                 decoder = AttnDecoderRNN(
                     hidden_size=config.decoder_hidden_dim,
                     attention_size=config.attention_dim,
-                    output_size=target_tokenizer.processor.vocab_size(),
+                    output_size=tokenizer.processor.vocab_size(),
                     encoder_bidirectional=config.encoder_bidirectional,
                     max_len=config.decoder_num_timesteps,
                     freeze_embedding_layer=config.freeze_embedding_layer,
                     attention_type=config.attention_type,
                     encoder_output_size=encoder.output_size,
-                    pad_idx=source_tokenizer.processor.pad_id(),
-                    num_embeddings=target_tokenizer.processor.vocab_size(),
-                    sos_token_id=source_tokenizer.processor.bos_id(),
+                    pad_idx=tokenizer.processor.pad_id(),
+                    num_embeddings=tokenizer.processor.vocab_size(),
+                    sos_token_id=tokenizer.processor.bos_id(),
                     embedding_dim=config.embedding_size,
                     num_layers=config.num_layers,
                     dropout=config.dropout,
-                    eos_token_id=target_tokenizer.processor.eos_id(),
+                    eos_token_id=tokenizer.processor.eos_id(),
                 ).to(device)
             else:
                 decoder = DecoderRNN(
                     hidden_size=config.decoder_hidden_dim,
-                    output_size=target_tokenizer.processor.vocab_size(),
+                    output_size=tokenizer.processor.vocab_size(),
                     max_len=config.decoder_num_timesteps,
                     freeze_embedding_layer=config.freeze_embedding_layer,
-                    pad_idx=source_tokenizer.processor.pad_id(),
+                    pad_idx=tokenizer.processor.pad_id(),
                     encoder_output_size=encoder.output_size,
-                    num_embeddings=target_tokenizer.processor.vocab_size(),
-                    sos_token_id=source_tokenizer.processor.bos_id(),
+                    num_embeddings=tokenizer.processor.vocab_size(),
+                    sos_token_id=tokenizer.processor.bos_id(),
                     context_size=int(encoder.hidden_size / config.num_layers),
                     embedding_dim=config.embedding_size,
                     num_layers=config.num_layers,
                     dropout=config.dropout,
                     encoder_bidirectional=config.encoder_bidirectional,
-                    eos_token_id=target_tokenizer.processor.eos_id(),
+                    eos_token_id=tokenizer.processor.eos_id(),
                 ).to(device)
 
             model = EncoderDecoderRNN(encoder=encoder, decoder=decoder)
@@ -269,9 +275,9 @@ def main(config: RNNConfig | TransformerConfig):
                 model = DecoderTransformer(
                     n_attention_heads=config.n_head,
                     n_layers=config.num_layers,
-                    vocab_size=combined_tokenizer.processor.vocab_size(),
+                    vocab_size=tokenizer.processor.vocab_size() if isinstance(tokenizer, SentencePieceTokenizer) else tokenizer.vocab_size,
                     d_model=config.d_model,
-                    block_size=config.max_input_length*2,
+                    block_size=config.fixed_length,
                     feedforward_hidden_dim=config.feedforward_hidden_dim,
                     norm_first=config.norm_first,
                     mlp_activation=config.activation,
@@ -282,13 +288,13 @@ def main(config: RNNConfig | TransformerConfig):
                 model = EncoderDecoderTransformer(
                     n_attention_heads=config.n_head,
                     n_layers=config.num_layers,
-                    vocab_size=target_tokenizer.processor.vocab_size(),
+                    vocab_size=tokenizer.processor.vocab_size() if isinstance(tokenizer, SentencePieceTokenizer) else tokenizer.vocab_size,
                     d_model=config.d_model,
                     block_size=config.max_input_length,
                     feedforward_hidden_dim=config.feedforward_hidden_dim,
-                    sos_token_id=target_tokenizer.processor.bos_id(),
-                    eos_token_id=target_tokenizer.processor.eos_id(),
-                    pad_token_id=source_tokenizer.processor.pad_id(),
+                    sos_token_id=tokenizer.processor.bos_id(),
+                    eos_token_id=tokenizer.processor.eos_id(),
+                    pad_token_id=tokenizer.processor.pad_id(),
                     norm_first=config.norm_first,
                     mlp_activation=config.activation,
                     positional_encoding_type=config.positional_encoding_type
@@ -338,8 +344,7 @@ def main(config: RNNConfig | TransformerConfig):
                         data_loader=(
                             test_data_loader if config.is_test else val_data_loader
                         ),
-                        source_tokenizer=source_tokenizer,
-                        target_tokenizer=target_tokenizer,
+                        tokenizer=tokenizer,
                         sequence_generator_type=(
                             BeamSearchSequenceGenerator
                             if config.eval_sequence_generator_type == "beam search"
@@ -369,8 +374,7 @@ def main(config: RNNConfig | TransformerConfig):
                 optimizer=optimizer,
                 model_weights_out_dir=str(config.weights_out_dir),
                 n_epochs=config.n_epochs,
-                source_tokenizer=source_tokenizer,
-                target_tokenizer=target_tokenizer,
+                tokenizer=tokenizer,
                 learning_rate=config.learning_rate,
                 decay_learning_rate=config.decay_learning_rate,
                 loss_eval_interval=config.loss_eval_interval,
@@ -379,7 +383,8 @@ def main(config: RNNConfig | TransformerConfig):
                 label_smoothing=config.label_smoothing,
                 use_mixed_precision=config.use_mixed_precision,
                 autocast_context=ctx,
-                max_new_inference_tokens=config.decoder_num_timesteps
+                max_new_inference_tokens=config.decoder_num_timesteps,
+                pad_token_id=tokenizer.pad_idx
             )
 
 

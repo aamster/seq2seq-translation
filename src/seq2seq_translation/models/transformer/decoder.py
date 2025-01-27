@@ -11,7 +11,6 @@ from seq2seq_translation.models.transformer.mlp import MLP, ActivationFunction
 import torch.nn.functional as F
 
 from seq2seq_translation.models.transformer.positional_encoding import PositionalEncodingType
-from seq2seq_translation.tokenization.sentencepiece_tokenizer import PAD_ID, EOS_ID
 
 
 class _DecoderBlock(nn.Module):
@@ -162,6 +161,8 @@ class DecoderTransformer(_Transformer):
     def generate(
         self,
         x: torch.tensor,
+        eot_token_id: int,
+        pad_token_id: int,
         temperature: float = 1.0,
         top_k: Optional[int] = None,
         max_new_tokens: Optional[int] = None,
@@ -177,7 +178,7 @@ class DecoderTransformer(_Transformer):
         all_logits = []
         for i in range(max_new_tokens):
             # forward the model to get the logits for the index in the sequence
-            key_padding_mask = (context != PAD_ID).bool()
+            key_padding_mask = (context != pad_token_id).bool()
             logits = self(
                 x=context,
                 tgt_key_padding_mask=key_padding_mask
@@ -197,7 +198,7 @@ class DecoderTransformer(_Transformer):
             generated_tokens = torch.cat((generated_tokens, next_token), dim=1)
             context = torch.cat([context, next_token], dim=1)
             # Stop if all sequences in the batch generated <eos>
-            if (next_token == EOS_ID).all():
+            if (next_token == eot_token_id).all():
                 break
         logits = torch.cat(all_logits, dim=1)
         return generated_tokens, logits

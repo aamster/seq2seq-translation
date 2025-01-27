@@ -83,7 +83,7 @@ def write_tokens_to_memmap_parallel(enc, datasets: LanguagePairsDatasets, idxs: 
 
     with Pool(num_workers) as pool:
         with tqdm(total=num_batches, desc="Writing to memmap") as pbar:
-            for result in pool.imap_unordered(tokenize_partial, range(num_batches)):
+            for result in pool.imap(tokenize_partial, range(num_batches)):
                 batch, batch_idx = result
                 arr_batch = np.concatenate(batch)
                 batch_start = batch_lens[:batch_idx].sum()

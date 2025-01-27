@@ -2,12 +2,67 @@ from typing import Optional
 
 import numpy as np
 import torch
+from tiktoken import Encoding
 from torch.utils.data import Dataset
 
 from seq2seq_translation.datasets.datasets import LanguagePairsDatasets
 from seq2seq_translation.tokenization.sentencepiece_tokenizer import (
-    SentencePieceTokenizer, EOS_ID, PAD_ID,
+    SentencePieceTokenizer,
 )
+
+
+class SentencePairsDatasetFromPreprocessedTokens(Dataset):
+    def __init__(
+        self,
+        idxs: np.ndarray,
+        tokenized_offsets: np.ndarray,
+        tokenized: np.memmap,
+        eot_token_id: int,
+        pad_token_id: int,
+        combine_source_and_target: bool = False,
+    ):
+        """
+
+        :param idxs: idxs to use from LanguagePairsDatasets
+        :param tokenized_offsets: offsets into the tokenized memmap array
+        :param tokenized: the memmap array storing all tokenized inputs in a single 1d array
+        :param eot_token_id
+        """
+
+        self._idxs = idxs
+        self._tokenized_offsets = tokenized_offsets
+        self._tokenized = tokenized
+        self._eot_token_id = eot_token_id
+        self._pad_token_id = pad_token_id
+        self._combine_source_and_target = combine_source_and_target
+
+    @property
+    def pad_token_id(self) -> int:
+        return self._pad_token_id
+    
+    @property
+    def eot_token_id(self) -> int:
+        return self._eot_token_id
+
+    def __len__(self):
+        return len(self._idxs)
+
+    def __getitem__(self, idx):
+        idx = self._idxs[idx]
+
+        x = self._tokenized[self._tokenized_offsets[idx]:self._tokenized_offsets[idx+1]]
+        x = torch.from_numpy(x.astype(np.int64))
+
+        if self._combine_source_and_target:
+            combined_target = torch.cat([x[1:], torch.tensor([self._pad_token_id])])
+        else:
+            combined_target = None
+
+        source_end = torch.where(x == self._eot_token_id)[0][0].item()
+        source = x[:source_end+1]
+        target = x[source_end+1:]
+
+        return source, target, x, combined_target, None
 
 
 class SentencePairsDataset(Dataset):
@@ -15,9 +70,9 @@ class SentencePairsDataset(Dataset):
         self,
         datasets: LanguagePairsDatasets,
         idxs: np.ndarray,
-        source_tokenizer: Optional[SentencePieceTokenizer] = None,
-        target_tokenizer: Optional[SentencePieceTokenizer] = None,
-        combined_tokenizer: Optional[SentencePieceTokenizer] = None,
+        eos_token_id: int,
+        pad_token_id: int,
+        combined_tokenizer: SentencePieceTokenizer | Encoding,
         combine_source_and_target: bool = False,
         max_length: int = None,
     ):
@@ -25,25 +80,20 @@ class SentencePairsDataset(Dataset):
 
         :param datasets: LanguagePairsDatasets
         :param idxs: idxs to use from LanguagePairsDatasets
-        :param source_tokenizer: SentencePieceTokenizer
-        :param target_tokenizer: SentencePieceTokenizer
-        :param combined_tokenizer: If provided, will use this instead of a separate source_tokenizer and target_tokenizer
+        :param tokenizer: SentencePieceTokenizer
         :param combine_source_and_target: Combine the source and target into a single input.
         :param max_length:
+        :param eos_token_id
         """
 
-        if source_tokenizer is None and target_tokenizer is None and combined_tokenizer is None:
-            raise ValueError('provide either source_tokenizer and target_tokenizer or combined_tokenizer')
-        if source_tokenizer is not None and target_tokenizer is None or target_tokenizer is not None and source_tokenizer is None:
-            raise ValueError('must provide both source_tokenizer and target_tokenizer')
         self._datasets = datasets
         self._idxs = idxs
-        self._source_tokenizer = source_tokenizer
-        self._target_tokenizer = target_tokenizer
         self._combined_tokenizer = combined_tokenizer
         self._max_length = max_length
         self._combine_source_and_target = combine_source_and_target
         self._transform = self._get_transform(max_len=max_length)
+        self._eos_token_id = eos_token_id
+        self._pad_token_id = pad_token_id
 
     def __len__(self):
         return len(self._idxs)
@@ -52,19 +102,19 @@ class SentencePairsDataset(Dataset):
         idx = self._idxs[idx]
         source, target, dataset_name = self._datasets[idx]
 
-        if self._combined_tokenizer is not None:
+        if isinstance(self._combined_tokenizer, SentencePieceTokenizer):
             source_ids = self._combined_tokenizer.processor.encode(source)
             target_ids = self._combined_tokenizer.processor.encode(target)
         else:
-            source_ids = self._source_tokenizer.processor.encode(source)
-            target_ids = self._target_tokenizer.processor.encode(target)
+            source_ids = self._combined_tokenizer.encode_ordinary(source)
+            target_ids = self._combined_tokenizer.encode_ordinary(target)
 
         source = self._transform(source_ids)
         target = self._transform(target_ids)
 
         if self._combine_source_and_target:
             combined = torch.cat([source, target])
-            combined_target = torch.cat([combined[1:], torch.tensor([PAD_ID])])   # shift 1 to the right
+            combined_target = torch.cat([combined[1:], torch.tensor([self._pad_token_id])])   # shift 1 to the right
         else:
             combined = None
             combined_target = None
@@ -80,7 +130,7 @@ class SentencePairsDataset(Dataset):
             if max_len is not None:
                 x = x[:max_len]
 
-            x.append(EOS_ID)
+            x.append(self._eos_token_id)
             x = torch.tensor(x)
             return x
 

@@ -7,6 +7,7 @@ from typing import Optional, Type, ContextManager
 
 import torch
 import wandb
+from tiktoken import Encoding
 from torch import nn
 import torch.nn.functional as F
 from torch.nn.parallel import DistributedDataParallel
@@ -25,8 +26,9 @@ import evaluate as huggingface_evaluate
 from seq2seq_translation.inference import SequenceGenerator, BeamSearchSequenceGenerator
 from seq2seq_translation.models.transformer.decoder import DecoderTransformer
 from seq2seq_translation.models.transformer.encoder_decoder import EncoderDecoderTransformer
+from seq2seq_translation.sentence_pairs_dataset import SentencePairsDatasetFromPreprocessedTokens
 from seq2seq_translation.tokenization.sentencepiece_tokenizer import (
-    SentencePieceTokenizer, PAD_ID,
+    SentencePieceTokenizer,
 )
 from seq2seq_translation.models.rnn import (
     EncoderDecoderRNN,
@@ -60,6 +62,8 @@ def _compute_loss(
     criterion: torch.nn.CrossEntropyLoss,
     loader: DataLoader,
 ):
+    loader.dataset: SentencePairsDatasetFromPreprocessedTokens
+
     batch_size = target_tensor.shape[0]
     C = logits.shape[-1]
 
@@ -67,7 +71,7 @@ def _compute_loss(
     logits = torch.nn.functional.pad(
         logits,
         (0, 0, 0, max(0, target_tensor.shape[1] - logits.shape[1])),
-        value=PAD_ID,
+        value=loader.dataset.pad_token_id,
     )
 
     T = target_tensor.shape[-1]
@@ -81,7 +85,7 @@ def _compute_loss(
 def _compute_bleu_score(
     decoded_ids: torch.tensor,
     target_tensor: torch.tensor,
-    tokenizer: SentencePieceTokenizer,
+    tokenizer: SentencePieceTokenizer | Encoding,
     smooth: bool = False,
 ):
     bleu_metric = BLEUScore(smooth=smooth)
@@ -116,6 +120,7 @@ def estimate_performance_metrics(
     val_loader: DataLoader,
     criterion,
     model: EncoderDecoderRNN | EncoderDecoderTransformer,
+    tokenizer: SentencePieceTokenizer | Encoding,
     epoch: int,
     eval_iters: int = 200,
     max_new_tokens: Optional[int] = None,
@@ -174,11 +179,6 @@ def estimate_performance_metrics(
         else:
             iterator = range(eval_iters)
 
-        source_tokenizer = (
-            data_loader.dataset.combined_tokenizer if data_loader.dataset.combined_tokenizer is not None else data_loader.dataset.source_tokenizer)
-        target_tokenizer = (
-            data_loader.dataset.combined_tokenizer if data_loader.dataset.combined_tokenizer is not None else data_loader.dataset.target_tokenizer)
-
         for eval_iter in iterator:
             input_tensor, target_tensor, combined_tensor, combined_target_tensor, _, input_lengths = next(data_loader_iter)
 
@@ -196,7 +196,9 @@ def estimate_performance_metrics(
                 combined_tensor=combined_tensor,
                 input_lengths=input_lengths,
                 max_new_tokens=max_new_tokens,
-                do_test_time_inference=estimate_bleu and data_loader_name == "val"
+                do_test_time_inference=estimate_bleu and data_loader_name == "val",
+                pad_token_id=val_data_loader.dataset.pad_token_id,
+                eot_token_id=val_loader.dataset.eot_token_id
             )
 
             loss = _compute_loss(logits, combined_target_tensor if combined_target_tensor is not None else target_tensor, criterion, train_loader)
@@ -204,7 +206,7 @@ def estimate_performance_metrics(
 
             if estimate_bleu:
                 bleu_score = _compute_bleu_score(
-                    decoded_ids=decoded_ids, target_tensor=target_tensor, tokenizer=target_tokenizer
+                    decoded_ids=decoded_ids, target_tensor=target_tensor, tokenizer=tokenizer
                 )
                 local_bleu_scores[eval_iter] = bleu_score
 
@@ -230,8 +232,8 @@ def estimate_performance_metrics(
                     get_pred(
                         model=model,
                         data_loader=data_loader,
-                        source_tokenizer=source_tokenizer,
-                        target_tokenizer=target_tokenizer,
+                        source_tokenizer=tokenizer,
+                        target_tokenizer=tokenizer,
                         idx=torch.randint(
                             low=0, high=len(data_loader.dataset), size=(1,)
                         )[0].item(),
@@ -256,6 +258,7 @@ def train_epoch(
     epoch: int,
     model_weights_out_dir: Path,
     best_bleu_score: float,
+    tokenizer: SentencePieceTokenizer | Encoding,
     decay_learning_rate: bool = True,
     learning_rate_decay_config: Optional[LearningRateDecayConfig] = None,
     loss_eval_interval: int = 2000,
@@ -318,7 +321,8 @@ def train_epoch(
                     eval_iters=eval_iters,
                     epoch=epoch,
                     max_new_tokens=max_new_inference_tokens,
-                    estimate_bleu=global_iter_num % accuracy_eval_interval == 0
+                    estimate_bleu=global_iter_num % accuracy_eval_interval == 0,
+                    tokenizer=tokenizer
                 )
 
             if is_master_process():
@@ -356,6 +360,8 @@ def train_epoch(
                         }
                         torch.save(checkpoint, Path(model_weights_out_dir) / "ckpt.pt")
 
+        val_data_loader.dataset: SentencePairsDatasetFromPreprocessedTokens
+
         with autocast_context:
             if isinstance(model, EncoderDecoderRNN):
                 logits, decoder_hidden, decoder_attn = model(
@@ -365,7 +371,7 @@ def train_epoch(
                 if isinstance(_unwrap_model(m=model), EncoderDecoderTransformer):
                     logits = model(x=input_tensor, targets=target_tensor)
                 elif isinstance(_unwrap_model(m=model), DecoderTransformer):
-                    tgt_key_padding_mask = (combined_tensor != PAD_ID).bool()
+                    tgt_key_padding_mask = (combined_tensor != val_data_loader.dataset.pad_token_id).bool()
                     logits = model(x=combined_tensor, tgt_key_padding_mask=tgt_key_padding_mask)
                 else:
                     raise ValueError(f'unknown model {type(model)}')
@@ -381,7 +387,7 @@ def train_epoch(
             logits = torch.nn.functional.pad(
                 logits,
                 (0, 0, 0, max(0, target_tensor.shape[1] - logits.shape[1])),
-                value=PAD_ID,
+                value=val_data_loader.dataset.pad_token_id,
             )
 
             loss = criterion(
@@ -422,13 +428,17 @@ def get_pred(
         input_tensor = input_tensor.to(torch.device(os.environ["DEVICE"]))
         target_tensor = target_tensor.to(torch.device(os.environ["DEVICE"]))
 
+    data_loader.dataset: SentencePairsDatasetFromPreprocessedTokens
+
     _, _, _, decoded_ids = inference(
         model=model,
         input_tensor=input_tensor.reshape(1, -1),
         input_lengths=[len(input_tensor)],
         max_new_tokens=max_new_tokens,
         do_test_time_inference=True,
-        get_input_logits=False
+        get_input_logits=False,
+        pad_token_id=data_loader.dataset.pad_token_id,
+        eot_token_id=data_loader.dataset.eot_token_id
     )
 
     input = source_tokenizer.decode(input_tensor)
@@ -441,6 +451,8 @@ def get_pred(
 def inference(
     model: EncoderDecoderRNN | EncoderDecoderTransformer | DecoderTransformer,
     input_tensor: torch.tensor,
+    pad_token_id: int,
+    eot_token_id: int,
     combined_tensor: Optional[torch.tensor] = None,
     input_lengths: Optional[list[int]] = None,
     target_tensor: Optional[torch.Tensor] = None,
@@ -466,7 +478,7 @@ def inference(
                 logits = model(x=input_tensor, targets=target_tensor)
             elif isinstance(_unwrap_model(m=model),
                             DecoderTransformer):
-                tgt_key_padding_mask = (combined_tensor != PAD_ID).bool()
+                tgt_key_padding_mask = (combined_tensor != pad_token_id).bool()
                 logits = model(x=combined_tensor, tgt_key_padding_mask=tgt_key_padding_mask)
             else:
                 raise ValueError(
@@ -474,7 +486,7 @@ def inference(
 
         if do_test_time_inference:
             model = _unwrap_model(m=model)
-            decoded_ids, _ = model.generate(x=input_tensor, top_k=1, max_new_tokens=max_new_tokens)
+            decoded_ids, _ = model.generate(x=input_tensor, top_k=1, max_new_tokens=max_new_tokens, pad_token_id=pad_token_id, eot_token_id=eot_token_id)
         else:
             if get_input_logits:
                 probs = F.softmax(logits, dim=-1)
@@ -490,8 +502,7 @@ def inference(
 def evaluate(
     encoder_decoder: EncoderDecoderRNN,
     data_loader: DataLoader,
-    source_tokenizer: SentencePieceTokenizer,
-    target_tokenizer: SentencePieceTokenizer,
+    tokenizer: SentencePieceTokenizer,
     sequence_generator_type: Type[SequenceGenerator] = BeamSearchSequenceGenerator,
 ):
     encoder_decoder.eval()
@@ -515,7 +526,7 @@ def evaluate(
 
         sequence_generator = sequence_generator_type(
             encoder_decoder=encoder_decoder,
-            tokenizer=target_tokenizer,
+            tokenizer=tokenizer,
         )
         for i in range(len(input_tensor)):
             pred = sequence_generator.generate(
@@ -524,7 +535,7 @@ def evaluate(
             if isinstance(sequence_generator, BeamSearchSequenceGenerator):
                 # it returns list of top scoring beams. select best one, and get decoded text
                 pred = pred[0][0]
-            target = target_tokenizer.decode(target_tensor[i])
+            target = tokenizer.decode(target_tensor[i])
             try:
                 bleu_score = bleu.compute(
                     predictions=[pred],
@@ -532,7 +543,7 @@ def evaluate(
                     # per example
                     references=[[target]],
                     smooth=True,
-                    tokenizer=target_tokenizer.processor.encode,
+                    tokenizer=tokenizer.processor.encode,
                 )["bleu"]
             except ZeroDivisionError:
                 bleu_score = 0
@@ -554,9 +565,9 @@ def train(
     model: EncoderDecoderRNN | EncoderDecoderTransformer,
     optimizer,
     n_epochs,
-    source_tokenizer: SentencePieceTokenizer,
-    target_tokenizer: SentencePieceTokenizer,
+    tokenizer: SentencePieceTokenizer | Encoding,
     model_weights_out_dir: str,
+    pad_token_id: int,
     learning_rate=0.001,
     decay_learning_rate: bool = True,
     loss_eval_interval: int = 2000,
@@ -569,7 +580,7 @@ def train(
 ):
     os.makedirs(model_weights_out_dir, exist_ok=True)
 
-    criterion = nn.CrossEntropyLoss(ignore_index=PAD_ID, label_smoothing=label_smoothing)
+    criterion = nn.CrossEntropyLoss(ignore_index=pad_token_id, label_smoothing=label_smoothing)
 
     best_bleu_score = -float("inf")
 
@@ -597,7 +608,8 @@ def train(
             accuracy_eval_interval=accuracy_eval_interval,
             use_mixed_precision=use_mixed_precision,
             autocast_context=autocast_context,
-            max_new_inference_tokens=max_new_inference_tokens
+            max_new_inference_tokens=max_new_inference_tokens,
+            tokenizer=tokenizer
         )
 
 
