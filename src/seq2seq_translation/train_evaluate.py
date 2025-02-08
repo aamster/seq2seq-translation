@@ -477,7 +477,7 @@ def inference(
                           EncoderDecoderTransformer):
                 logits = model(x=input_tensor, targets=target_tensor)
             elif isinstance(_unwrap_model(m=model),
-                            DecoderTransformer):
+                            (DecoderTransformer,)):
                 tgt_key_padding_mask = (combined_tensor != pad_token_id).bool()
                 logits = model(x=combined_tensor, tgt_key_padding_mask=tgt_key_padding_mask)
             else:

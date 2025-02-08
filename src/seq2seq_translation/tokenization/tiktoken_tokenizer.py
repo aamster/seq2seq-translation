@@ -11,11 +11,11 @@ class TikTokenTokenizer:
 
     @property
     def pad_idx(self) -> int:
-        return self._tokenizer.max_token_value + 2 # 1 more than eot token
+        return self._tokenizer.max_token_value + 1
 
     @property
     def vocab_size(self) -> int:
-        return self._tokenizer.n_vocab + 2  # includes eot and pad ids
+        return self._tokenizer.n_vocab
 
     def decode(self, token_ids: torch.tensor) -> list[str] | str:
         """

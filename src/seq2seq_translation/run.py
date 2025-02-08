@@ -15,7 +15,7 @@ from torch.utils.data import DataLoader, DistributedSampler
 
 from seq2seq_translation.config._config import ModelType, TokenizerType
 from seq2seq_translation.config.rnn_config import RNNConfig
-from seq2seq_translation.config.transformer_config import TransformerConfig
+from seq2seq_translation.config.transformer_config import TransformerConfig, GPT2Size
 from seq2seq_translation.data_loading import CollateFunction
 from seq2seq_translation.datasets.datasets import LanguagePairsDatasets
 from seq2seq_translation.inference import (
@@ -24,6 +24,8 @@ from seq2seq_translation.inference import (
 )
 from seq2seq_translation.models.transformer.decoder import DecoderTransformer
 from seq2seq_translation.models.transformer.encoder_decoder import EncoderDecoderTransformer
+from seq2seq_translation.models.transformer.mlp import ActivationFunction
+from seq2seq_translation.models.transformer.positional_encoding import PositionalEncodingType
 from seq2seq_translation.sentence_pairs_dataset import SentencePairsDataset, \
     SentencePairsDatasetFromPreprocessedTokens
 from seq2seq_translation.tokenization.sentencepiece_tokenizer import (
@@ -60,6 +62,29 @@ def _remove_module_from_state_dict(state_dict: dict):
 
 
 def main(config: RNNConfig | TransformerConfig):
+    if isinstance(config, TransformerConfig) and config.from_gpt2_weights:
+        if config.gpt_size is None:
+            raise ValueError('specify gpt2 size')
+        if config.gpt_size == GPT2Size.SMALL:
+            config.num_layers = 12
+            config.n_head = 12
+            config.d_model = 768
+        elif config.gpt_size == GPT2Size.MEDIUM:
+            config.num_layers = 24
+            config.n_head = 16
+            config.d_model = 1024
+        elif config.gpt_size == GPT2Size.LARGE:
+            config.num_layers = 36
+            config.n_head = 20
+            config.d_model = 1280
+        config.feedforward_hidden_dim = config.d_model * 4
+        config.norm_first = True
+        config.activation = ActivationFunction.GELU,
+        config.positional_encoding_type = PositionalEncodingType.LEARNED
+        config.fixed_length = 1024
+        config.decoder_only = True
+
+
     if not config.evaluate_only and config.weights_out_dir is None:
         raise ValueError("must provide model_weights_out_dir")
     if not config.evaluate_only and config.n_epochs is None:
@@ -272,18 +297,26 @@ def main(config: RNNConfig | TransformerConfig):
         else:
             assert isinstance(config, TransformerConfig), "expected TransformerConfig"
             if config.decoder_only:
-                model = DecoderTransformer(
-                    n_attention_heads=config.n_head,
-                    n_layers=config.num_layers,
-                    vocab_size=tokenizer.processor.vocab_size() if isinstance(tokenizer, SentencePieceTokenizer) else tokenizer.vocab_size,
-                    d_model=config.d_model,
-                    block_size=config.fixed_length,
-                    feedforward_hidden_dim=config.feedforward_hidden_dim,
-                    norm_first=config.norm_first,
-                    mlp_activation=config.activation,
-                    use_cross_attention=False,
-                    positional_encoding_type=config.positional_encoding_type
-                ).to(device)
+                if config.from_gpt2_weights:
+                    model = DecoderTransformer.from_pretrained(
+                        config=config,
+                        vocab_size=tokenizer.vocab_size,
+                        model_type='gpt2',
+                        override_args=dict(dropout=config.dropout)
+                    ).to(device)
+                else:
+                    model = DecoderTransformer(
+                        n_attention_heads=config.n_head,
+                        n_layers=config.num_layers,
+                        vocab_size=tokenizer.processor.vocab_size() if isinstance(tokenizer, SentencePieceTokenizer) else tokenizer.vocab_size,
+                        d_model=config.d_model,
+                        block_size=config.fixed_length,
+                        feedforward_hidden_dim=config.feedforward_hidden_dim,
+                        norm_first=config.norm_first,
+                        mlp_activation=config.activation,
+                        use_cross_attention=False,
+                        positional_encoding_type=config.positional_encoding_type
+                    ).to(device)
             else:
                 model = EncoderDecoderTransformer(
                     n_attention_heads=config.n_head,
