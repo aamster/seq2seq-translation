@@ -79,7 +79,7 @@ def main(config: RNNConfig | TransformerConfig):
             config.d_model = 1280
         config.feedforward_hidden_dim = config.d_model * 4
         config.norm_first = True
-        config.activation = ActivationFunction.GELU,
+        config.activation = ActivationFunction.GELU
         config.positional_encoding_type = PositionalEncodingType.LEARNED
         config.fixed_length = 1024
         config.decoder_only = True
@@ -126,10 +126,10 @@ def main(config: RNNConfig | TransformerConfig):
         else:
             rng = None
 
-        train_offsets = np.load(config.tokenized_dir / 'train_offsets.npy')
+        train_offsets = np.memmap(config.tokenized_dir / 'train_offsets.bin', dtype=np.uint64)
         train_tokenized = np.memmap(config.tokenized_dir / 'train.bin', dtype=np.uint16)
 
-        val_offsets = np.load(config.tokenized_dir / 'val_offsets.npy')
+        val_offsets = np.memmap(config.tokenized_dir / 'val_offsets.bin', dtype=np.uint64)
         val_tokenized = np.memmap(config.tokenized_dir / 'val.bin', dtype=np.uint16)
 
         # -1 because it goes until 1 past the last sequence

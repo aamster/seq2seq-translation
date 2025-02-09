@@ -7,6 +7,7 @@ from multiprocessing import Pool
 from pathlib import Path
 from typing import Optional
 
+from PIL.ImageChops import offset
 from tqdm import tqdm
 import numpy as np
 import tiktoken
@@ -73,12 +74,22 @@ def get_num_tokens_parallel(enc, datasets: LanguagePairsDatasets, idxs: np.ndarr
                 pbar.update(1)
     return num_tokens, batch_lens
 
-def write_tokens_to_memmap_parallel(enc, datasets: LanguagePairsDatasets, idxs: np.ndarray, batch_size: int, num_batches: int, arr: np.memmap, batch_lens: np.ndarray, num_workers: int):
+def write_tokens_to_memmap_parallel(
+    enc,
+    datasets: LanguagePairsDatasets,
+    idxs: np.ndarray,
+    batch_size: int,
+    num_batches: int,
+    arr: np.memmap,
+    batch_lens: np.ndarray,
+    num_workers: int,
+    offsets_out_path: Path
+):
     tokenize_partial = partial(
         tokenize, enc=enc, datasets=datasets, dataset_len=len(idxs), batch_size=batch_size
     )
 
-    offsets = np.zeros(len(idxs) + 1, dtype=np.uint64)
+    offsets = np.memmap(offsets_out_path, dtype=np.uint64, mode='w+', shape=(len(idxs) + 1,))
     offsets[0] = 0
 
     with Pool(num_workers) as pool:
@@ -96,12 +107,6 @@ def write_tokens_to_memmap_parallel(enc, datasets: LanguagePairsDatasets, idxs: 
                 pbar.update(1)
     return arr, offsets
 
-def write_tokens_to_memmap(batch: list[dict], start_idx, memmap: np.memmap):
-    position = start_idx
-    for tokens in batch:
-        memmap[position:position + len(tokens)] = tokens
-        position += len(tokens)
-    memmap.flush()
 
 def main(config_path: Path):
     with open(config_path) as f:
@@ -153,12 +158,12 @@ def main(config_path: Path):
             num_batches=num_batches,
             arr=arr,
             batch_lens=np.load(config.out_dir / f'{split_name}_batch_lens.npy'),
-            num_workers=config.num_workers
+            num_workers=config.num_workers,
+            offsets_out_path=config.out_dir / f"{split_name}_offsets.bin"
         )
 
         arr.flush()
-
-        np.save(config.out_dir / f"{split_name}_offsets.npy", offsets)
+        offsets.flush()
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()

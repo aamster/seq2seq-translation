@@ -15,7 +15,8 @@ dependencies = [
     "datasets",
     "loguru",
     "pydantic",
-    "tiktoken"
+    "tiktoken",
+    "transformers"
 ]
 
 [tool.setuptools.packages.find]
