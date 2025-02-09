@@ -209,8 +209,13 @@ def main(config: RNNConfig | TransformerConfig):
                 eos_token_id=eot_token_id,
                 pad_token_id=tokenizer.pad_idx
             )
-        else:
-            test_datasets, test_dset = None, None
+            test_data_loader = DataLoader(
+                dataset=test_dset,
+                shuffle=False,
+                sampler=DistributedSampler(test_dset) if config.use_ddp else None,
+                batch_size=config.batch_size,
+                collate_fn=CollateFunction(pad_token_id=tokenizer.pad_idx),
+            )
 
         train_sampler = DistributedSampler(train_dset) if config.use_ddp else None
         train_data_loader = DataLoader(
@@ -225,13 +230,6 @@ def main(config: RNNConfig | TransformerConfig):
         val_data_loader = DataLoader(
             dataset=val_dset,
             shuffle=False,
-            batch_size=config.batch_size,
-            collate_fn=CollateFunction(pad_token_id=tokenizer.pad_idx),
-        )
-        test_data_loader = DataLoader(
-            dataset=test_dset,
-            shuffle=False,
-            sampler=DistributedSampler(test_dset) if config.use_ddp else None,
             batch_size=config.batch_size,
             collate_fn=CollateFunction(pad_token_id=tokenizer.pad_idx),
         )
