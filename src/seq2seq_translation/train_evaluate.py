@@ -409,7 +409,8 @@ def train_epoch(
 
         total_loss += loss.item()
 
-        if input_tensor.device.startswith('cuda'):
+        if input_tensor.device.type == 'cuda':
+            print('sync')
             torch.cuda.synchronize()    # wait for GPU to finish work
         t1 = time.time()
 
