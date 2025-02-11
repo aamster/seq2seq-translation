@@ -413,13 +413,15 @@ def train_epoch(
 
         if torch.distributed.is_initialized():
             input_lengths = torch.tensor(input_lengths, device=input_tensor.device)
-            tokens_processed = torch.distributed.all_reduce(input_lengths, op=torch.distributed.ReduceOp.SUM)
+            torch.distributed.all_reduce(input_lengths, op=torch.distributed.ReduceOp.SUM)
+            tokens_processed = input_lengths
         else:
             tokens_processed = sum(input_lengths)
 
 
-        prog_bar.set_postfix_str(f"Iter num {global_iter_num}: loss {loss.item():.4f} tok/sec: {tokens_processed/(t1-t0):.2f}")
-        prog_bar.update()
+        if is_master_process():
+            prog_bar.set_postfix_str(f"Iter num {global_iter_num}: loss {loss.item():.4f} tok/sec: {tokens_processed/(t1-t0):.2f}")
+            prog_bar.update()
 
     return total_loss / len(train_data_loader), best_bleu_score
 
