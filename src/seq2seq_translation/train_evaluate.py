@@ -416,11 +416,11 @@ def train_epoch(
             torch.distributed.all_reduce(input_lengths, op=torch.distributed.ReduceOp.SUM)
             tokens_processed = input_lengths
         else:
-            tokens_processed = sum(input_lengths)
+            tokens_processed = torch.tensor(sum(input_lengths), device=input_tensor.device)
 
 
         if is_master_process():
-            prog_bar.set_postfix_str(f"Iter num {global_iter_num}: loss {loss.item():.4f} tok/sec: {tokens_processed/(t1-t0):.2f}")
+            prog_bar.set_postfix_str(f"Iter num {global_iter_num}: loss {loss.item():.4f} tok/sec: {tokens_processed.item()/(t1-t0):.2f}")
             prog_bar.update()
 
     return total_loss / len(train_data_loader), best_bleu_score
