@@ -412,7 +412,7 @@ def train_epoch(
         t1 = time.time()
 
         if torch.distributed.is_initialized():
-            input_lengths = torch.tensor(input_lengths, device=input_tensor.device, dtype=torch.uint16)
+            input_lengths = torch.tensor(input_lengths, device=input_tensor.device)
             tokens_processed = torch.distributed.all_reduce(input_lengths, op=torch.distributed.ReduceOp.SUM)
         else:
             tokens_processed = sum(input_lengths)
