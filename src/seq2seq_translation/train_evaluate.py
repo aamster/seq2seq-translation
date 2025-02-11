@@ -1,5 +1,6 @@
 import math
 import os
+import time
 from contextlib import nullcontext
 from dataclasses import dataclass
 from pathlib import Path
@@ -33,7 +34,7 @@ from seq2seq_translation.tokenization.sentencepiece_tokenizer import (
 from seq2seq_translation.models.rnn import (
     EncoderDecoderRNN,
 )
-from seq2seq_translation.utils.ddp_utils import is_master_process
+from seq2seq_translation.utils.ddp_utils import is_master_process, get_world_size
 
 
 @dataclass
@@ -275,6 +276,8 @@ def train_epoch(
         train_data_loader, total=len(train_data_loader), desc=f"train epoch {epoch}"
     )
     for epoch_iter, data in enumerate(prog_bar):
+        t0 = time.time()
+
         input_tensor, target_tensor, combined_tensor, combined_target_tensor, _, input_lengths = data
         input_tensor: torch.Tensor
         target_tensor: torch.Tensor
@@ -395,21 +398,28 @@ def train_epoch(
                 target_tensor.view(batch_size * T),
             )
 
-        prog_bar.set_postfix_str(f"Iter num {global_iter_num}: loss {loss.item():.4f}")
-        prog_bar.update()
-
         scaler.scale(loss).backward()
 
         scaler.unscale_(optimizer)
-        total_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
-        if not torch.isfinite(total_norm):
-            logger.warning('Non-finite gradient norm encountered!')
+        torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
 
         scaler.step(optimizer)
         scaler.update()
         optimizer.zero_grad()
 
         total_loss += loss.item()
+
+        t1 = time.time()
+
+        if torch.distributed.is_initialized():
+            input_lengths = torch.tensor(input_lengths, device=input_tensor.device, dtype=torch.uint16)
+            tokens_processed = torch.distributed.all_reduce(input_lengths, op=torch.distributed.ReduceOp.SUM)
+        else:
+            tokens_processed = sum(input_lengths)
+
+
+        prog_bar.set_postfix_str(f"Iter num {global_iter_num}: loss {loss.item():.4f} tok/sec: {tokens_processed/(t1-t0):.2f}")
+        prog_bar.update()
 
     return total_loss / len(train_data_loader), best_bleu_score
 
