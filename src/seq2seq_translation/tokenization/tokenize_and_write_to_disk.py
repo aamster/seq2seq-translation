@@ -7,13 +7,15 @@ from multiprocessing import Pool
 from pathlib import Path
 from typing import Optional
 
-from PIL.ImageChops import offset
+from tiktoken import Encoding
 from tqdm import tqdm
 import numpy as np
 import tiktoken
 
 from seq2seq_translation.data_loading import DataSplitter
 from seq2seq_translation.datasets.datasets import LanguagePairsDatasets
+from seq2seq_translation.tokenization.sentencepiece_tokenizer import SentencePieceTokenizer
+
 
 @dataclass
 class Config:
@@ -24,6 +26,7 @@ class Config:
     out_dir: Path
     train_frac: float = 0.999
     tokenizer_type: str = 'tiktoken'
+    sentence_piece_model_dir: Optional[Path] = None
     max_len: int = 128
     train_n_tokens: Optional[int] = None
     val_n_tokens: Optional[int] = None
@@ -34,22 +37,34 @@ class Config:
         self.datasets_dir = Path(self.datasets_dir)
         self.out_dir = Path(self.out_dir)
 
-def process(source, target, enc, max_len: int = 128):
-    source_ids = enc.encode_ordinary(source)
-    target_ids = enc.encode_ordinary(target)
+        if self.sentence_piece_model_dir is not None:
+            self.sentence_piece_model_dir = Path(self.sentence_piece_model_dir)
+
+def process(source, target, enc: Encoding | SentencePieceTokenizer, max_len: int = 128):
+
+    if isinstance(enc, Encoding):
+        source_ids = enc.encode_ordinary(source)
+        target_ids = enc.encode_ordinary(target)
+    else:
+        source_ids = enc.processor.encode(source)
+        target_ids = enc.processor.encode(target)
 
     source_ids = source_ids[:max_len]
     target_ids = target_ids[:max_len]
 
-    source_ids.append(enc.eot_token)
-    target_ids.append(enc.eot_token)
+    if isinstance(enc, Encoding):
+        source_ids.append(enc.eot_token)
+        target_ids.append(enc.eot_token)
+    else:
+        source_ids.append(enc.eot_idx)
+        target_ids.append(enc.eot_idx)
 
     combined = source_ids + target_ids
 
     return combined
 
 
-def tokenize(batch_idx: int, enc, datasets, dataset_len: int, batch_size: int = 1024):
+def tokenize(batch_idx: int, enc: Encoding | SentencePieceTokenizer, datasets, dataset_len: int, batch_size: int = 1024):
     start = batch_idx * batch_size
     end = min(start + batch_size, dataset_len)
     batch = [process(*datasets[i][:-1], enc=enc) for i in range(start, end)]
@@ -129,7 +144,9 @@ def main(config_path: Path):
     if config.tokenizer_type == 'tiktoken':
         enc = tiktoken.get_encoding("gpt2")
     else:
-        raise NotImplemented
+        if config.sentence_piece_model_dir is None:
+            raise ValueError('sentence_piece_model_dir required')
+        enc = SentencePieceTokenizer(model_prefix=str(config.sentence_piece_model_dir / Path(config.sentence_piece_model_dir).name))
 
     for split_name, idxs in (('train', train_idxs), ('val', test_idxs)):
         num_batches = (len(idxs) + config.batch_size - 1) // config.batch_size
