@@ -409,12 +409,13 @@ def train_epoch(
 
         total_loss += loss.item()
 
+        if input_tensor.device.startswith('cuda'):
+            torch.cuda.synchronize()    # wait for GPU to finish work
         t1 = time.time()
 
         if torch.distributed.is_initialized():
-            input_lengths = torch.tensor(input_lengths, device=input_tensor.device).sum()
-            torch.distributed.all_reduce(input_lengths, op=torch.distributed.ReduceOp.SUM)
-            tokens_processed = input_lengths
+            tokens_processed = torch.tensor(input_lengths, device=input_tensor.device).sum()
+            torch.distributed.all_reduce(tokens_processed, op=torch.distributed.ReduceOp.SUM)
         else:
             tokens_processed = torch.tensor(sum(input_lengths), device=input_tensor.device)
 
