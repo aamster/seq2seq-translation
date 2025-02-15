@@ -13,7 +13,7 @@ from loguru import logger
 from torch import optim
 from torch.utils.data import DataLoader, DistributedSampler
 
-from seq2seq_translation.config._config import ModelType, TokenizerType, ModelDtype
+from seq2seq_translation.config._config import ModelType, TokenizerType
 from seq2seq_translation.config.rnn_config import RNNConfig
 from seq2seq_translation.config.transformer_config import TransformerConfig, GPT2Size
 from seq2seq_translation.data_loading import CollateFunction
