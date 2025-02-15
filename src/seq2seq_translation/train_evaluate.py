@@ -271,11 +271,10 @@ def train_epoch(
     loss_eval_interval: int = 2000,
     accuracy_eval_interval: int = 10000,
     eval_iters: int = 200,
-    use_mixed_precision: bool = True,
     autocast_context: ContextManager = nullcontext(),
     max_new_inference_tokens: Optional[int] = None
 ):
-    scaler = torch.cuda.amp.GradScaler(enabled=use_mixed_precision)
+    scaler = torch.cuda.amp.GradScaler(enabled=torch.get_autocast_gpu_dtype() == torch.float16)
 
     total_loss = 0
     prog_bar = tqdm(
@@ -622,7 +621,6 @@ def train(
             eval_iters=eval_iters,
             loss_eval_interval=loss_eval_interval,
             accuracy_eval_interval=accuracy_eval_interval,
-            use_mixed_precision=use_mixed_precision,
             autocast_context=autocast_context,
             max_new_inference_tokens=max_new_inference_tokens,
             tokenizer=tokenizer
