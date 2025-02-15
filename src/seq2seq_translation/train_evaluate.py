@@ -45,7 +45,7 @@ class LearningRateDecayConfig:
     min_lr: float = 5e-5  # should be ~= learning_rate/10 per Chinchilla
 
 
-def _unwrap_model(m):
+def _model_isinstance(m, type):
     """Unwrap any DDP or OptimizedModule wrappers to get the original model."""
     # Unwrap DDP
     if isinstance(m, DistributedDataParallel):
@@ -55,6 +55,12 @@ def _unwrap_model(m):
     if isinstance(m, torch._dynamo.eval_frame.OptimizedModule):
         m = m._orig_mod
 
+    return isinstance(m, type)
+
+def _unwrap_model(m):
+    """Unwrap any DDP or OptimizedModule wrappers to get the original model."""
+    if isinstance(m, DistributedDataParallel):
+        m = m.module
     return m
 
 def _compute_loss(
@@ -371,9 +377,9 @@ def train_epoch(
                     x=input_tensor, input_lengths=input_lengths, target_tensor=target_tensor
                 )
             else:
-                if isinstance(_unwrap_model(m=model), EncoderDecoderTransformer):
+                if _model_isinstance(m=model, type=EncoderDecoderTransformer):
                     logits = model(x=input_tensor, targets=target_tensor)
-                elif isinstance(_unwrap_model(m=model), DecoderTransformer):
+                elif _model_isinstance(m=model, type=DecoderTransformer):
                     tgt_key_padding_mask = (combined_tensor != val_data_loader.dataset.pad_token_id).bool()
                     logits = model(x=combined_tensor, tgt_key_padding_mask=tgt_key_padding_mask)
                 else:
@@ -486,20 +492,17 @@ def inference(
         if get_input_logits:
             # get logits, decoded_ids using target as "teacher"
             # easier/quicker than test-time inference, since already have the target sequence
-            if isinstance(_unwrap_model(m=model),
-                          EncoderDecoderTransformer):
+            if _model_isinstance(m=model, type=EncoderDecoderTransformer):
                 logits = model(x=input_tensor, targets=target_tensor)
-            elif isinstance(_unwrap_model(m=model),
-                            (DecoderTransformer,)):
+            elif _model_isinstance(m=model, type=DecoderTransformer):
                 tgt_key_padding_mask = (combined_tensor != pad_token_id).bool()
                 logits = model(x=combined_tensor, tgt_key_padding_mask=tgt_key_padding_mask)
             else:
                 raise ValueError(
-                    f'unknown model type {type(_unwrap_model(m=model))}')
+                    f'unknown model type {type(_model_isinstance(m=model))}')
 
         if do_test_time_inference:
-            model = _unwrap_model(m=model)
-            decoded_ids, _ = model.generate(x=input_tensor, top_k=1, max_new_tokens=max_new_tokens, pad_token_id=pad_token_id, eot_token_id=eot_token_id)
+            decoded_ids, _ = _unwrap_model(m=model).generate(x=input_tensor, top_k=1, max_new_tokens=max_new_tokens, pad_token_id=pad_token_id, eot_token_id=eot_token_id)
         else:
             if get_input_logits:
                 probs = F.softmax(logits, dim=-1)

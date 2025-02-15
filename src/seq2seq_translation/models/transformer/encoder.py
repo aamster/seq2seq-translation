@@ -51,6 +51,7 @@ class EncoderTransformer(_Transformer):
         vocab_size: int,
         d_model: int,
         block_size: int,
+        pad_token_idx: int,
         dropout: float = 0.0,
         feedforward_hidden_dim: int = 2048,
         norm_first: bool = False,
@@ -64,7 +65,8 @@ class EncoderTransformer(_Transformer):
             vocab_size=vocab_size,
             block_size=block_size,
             dropout=dropout,
-            positional_encoding_type=positional_encoding_type
+            positional_encoding_type=positional_encoding_type,
+            pad_token_idx=pad_token_idx
         )
         self.blocks = nn.ModuleList(
             [

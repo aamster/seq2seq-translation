@@ -40,7 +40,8 @@ class EncoderDecoderTransformer(nn.Module):
             feedforward_hidden_dim=feedforward_hidden_dim,
             norm_first=norm_first,
             mlp_activation=mlp_activation,
-            positional_encoding_type=positional_encoding_type
+            positional_encoding_type=positional_encoding_type,
+            pad_token_idx=pad_token_id
         )
         self.decoder = DecoderTransformer(
             n_layers=n_layers,
@@ -53,7 +54,8 @@ class EncoderDecoderTransformer(nn.Module):
             feedforward_hidden_dim=feedforward_hidden_dim,
             norm_first=norm_first,
             mlp_activation=mlp_activation,
-            positional_encoding_type=positional_encoding_type
+            positional_encoding_type=positional_encoding_type,
+            pad_token_idx=pad_token_id
         )
         self._block_size = block_size
         self._sos_token_id = sos_token_id

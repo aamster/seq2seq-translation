@@ -300,7 +300,8 @@ def main(config: RNNConfig | TransformerConfig):
                         config=config,
                         vocab_size=tokenizer.vocab_size,
                         model_type='gpt2',
-                        override_args=dict(dropout=config.dropout)
+                        override_args=dict(dropout=config.dropout),
+                        pad_token_idx=tokenizer.pad_idx
                     ).to(device)
                 else:
                     model = DecoderTransformer(
@@ -313,7 +314,8 @@ def main(config: RNNConfig | TransformerConfig):
                         norm_first=config.norm_first,
                         mlp_activation=config.activation,
                         use_cross_attention=False,
-                        positional_encoding_type=config.positional_encoding_type
+                        positional_encoding_type=config.positional_encoding_type,
+                        pad_token_idx=tokenizer.pad_idx
                     ).to(device)
             else:
                 model = EncoderDecoderTransformer(
@@ -328,7 +330,7 @@ def main(config: RNNConfig | TransformerConfig):
                     pad_token_id=tokenizer.processor.pad_id(),
                     norm_first=config.norm_first,
                     mlp_activation=config.activation,
-                    positional_encoding_type=config.positional_encoding_type
+                    positional_encoding_type=config.positional_encoding_type,
                 ).to(device)
 
         optimizer = optim.AdamW(
@@ -353,8 +355,6 @@ def main(config: RNNConfig | TransformerConfig):
         logger.info(f'Model num params: {model.num_params / 1e6}M')
 
         if config.compile:
-            # requires PyTorch 2.0
-            logger.info("compiling the model... (takes a ~minute)")
             model = torch.compile(model)
 
         if config.use_ddp:

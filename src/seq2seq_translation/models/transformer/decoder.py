@@ -96,6 +96,7 @@ class DecoderTransformer(_Transformer):
         vocab_size: int,
         d_model: int,
         block_size: int,
+        pad_token_idx: int,
         dropout: float = 0.0,
         use_cross_attention: bool = True,
         feedforward_hidden_dim: int = 2048,
@@ -110,7 +111,8 @@ class DecoderTransformer(_Transformer):
             d_model=d_model,
             block_size=block_size,
             dropout=dropout,
-            positional_encoding_type=positional_encoding_type
+            positional_encoding_type=positional_encoding_type,
+            pad_token_idx=pad_token_idx
         )
         self._use_cross_attention = use_cross_attention
         self.blocks = nn.ModuleList(
@@ -226,6 +228,7 @@ class DecoderTransformer(_Transformer):
         config: TransformerConfig,
         model_type: str,
         vocab_size: int,
+        pad_token_idx: int,
         override_args: Optional[dict] = None,
     ):
         assert model_type in {'gpt2', 'gpt2-medium', 'gpt2-large', 'gpt2-xl'}
@@ -246,7 +249,8 @@ class DecoderTransformer(_Transformer):
             norm_first=config.norm_first,
             mlp_activation=config.activation,
             use_cross_attention=False,
-            positional_encoding_type=config.positional_encoding_type
+            positional_encoding_type=config.positional_encoding_type,
+            pad_token_idx=pad_token_idx
         )
         sd = model.state_dict()
         sd_keys = sd.keys()

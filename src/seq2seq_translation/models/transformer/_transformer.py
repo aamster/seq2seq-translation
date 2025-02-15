@@ -59,6 +59,7 @@ class _Transformer(nn.Module):
         vocab_size: int,
         d_model: int,
         block_size: int,
+        pad_token_idx: int,
         dropout: float = 0.0,
         positional_encoding_type: PositionalEncodingType = PositionalEncodingType.LEARNED
     ):
@@ -70,7 +71,7 @@ class _Transformer(nn.Module):
         self._n_attention_heads = n_attention_heads
         self._n_layers = n_layers
 
-        self.embedding = EmbeddingWithPadding(num_embeddings=vocab_size, d_model=d_model, pad_idx=vocab_size)
+        self.embedding = EmbeddingWithPadding(num_embeddings=vocab_size, d_model=d_model, pad_idx=pad_token_idx)
         if positional_encoding_type == PositionalEncodingType.LEARNED:
             self.positional_embedding = nn.Embedding(self._block_size, self._d_model)
         else:
