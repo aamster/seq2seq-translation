@@ -416,7 +416,6 @@ def main(config: RNNConfig | TransformerConfig):
                 accuracy_eval_interval=config.accuracy_eval_interval,
                 eval_iters=config.eval_iters,
                 label_smoothing=config.label_smoothing,
-                use_mixed_precision=config.use_mixed_precision,
                 autocast_context=ctx,
                 max_new_inference_tokens=config.decoder_num_timesteps,
                 pad_token_id=tokenizer.pad_idx

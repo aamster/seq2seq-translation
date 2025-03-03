@@ -66,28 +66,104 @@ def _unwrap_model(m):
 def _compute_loss(
     logits: torch.tensor,
     target_tensor: torch.tensor,
-    criterion: torch.nn.CrossEntropyLoss,
-    loader: DataLoader,
+    pad_token_id: int,
+    label_smoothing: float = 0.0,
 ):
-    loader.dataset: SentencePairsDatasetFromPreprocessedTokens
-
     batch_size = target_tensor.shape[0]
     C = logits.shape[-1]
 
-    # Pad decoder_outputs if necessary
-    logits = torch.nn.functional.pad(
-        logits,
-        (0, 0, 0, max(0, target_tensor.shape[1] - logits.shape[1])),
-        value=loader.dataset.pad_token_id,
-    )
-
     T = target_tensor.shape[-1]
 
-    loss = criterion(
-        logits.reshape(batch_size * T, C), target_tensor.view(batch_size * T)
+    loss = F.cross_entropy(
+        logits.reshape(batch_size * T, C), target_tensor.view(batch_size * T),
+        ignore_index=pad_token_id,
+        label_smoothing=label_smoothing
     )
     return loss
 
+def _compute_translation_loss(
+    logits: torch.tensor,
+    target_tensor: torch.tensor,
+    pad_token_id: int,
+    eot_token_id: int,
+    label_smoothing: float = 0.0,
+):
+    # argmax here will find the 1st occurrence
+    eot = torch.argmax((target_tensor == eot_token_id).int(), dim=1)
+
+    loss_target = [
+        F.cross_entropy(logits[i, idx + 1:, :], target_tensor[i, idx + 1:],
+                        ignore_index=pad_token_id, label_smoothing=label_smoothing)
+        for i, idx in enumerate(eot)
+    ]
+    loss = torch.stack(loss_target).mean()
+    return loss
+
+def _compute_autoencoding_loss(
+    logits: torch.tensor,
+    target_tensor: torch.tensor,
+    pad_token_id: int,
+    eot_token_id: int,
+):
+    # argmax here will find the 1st occurrence
+    eot = torch.argmax((target_tensor == eot_token_id).int(), dim=1)
+
+    loss_source = [
+        F.cross_entropy(logits[i, :idx + 1, :], target_tensor[i, :idx + 1],
+                        ignore_index=pad_token_id)
+        for i, idx in enumerate(eot)
+    ]
+    loss = torch.stack(loss_source).mean()
+
+    return loss
+
+def _compute_multi_task_translation_loss(
+    logits: torch.tensor,
+    target_tensor: torch.tensor,
+    pad_token_id: int,
+    eot_token_id: int,
+    max_steps: int,
+    step_num: int,
+    autoencode_loss_weight_alpha = 0.1,
+    autoencode_loss_weight_beta = 0.25,
+    include_autoencode_loss: bool = True,
+    label_smoothing: float = 0.0,
+):
+    """
+    From "Language models are good translators, Wang et al"
+
+    :param max_steps:
+    :param step_num:
+    :param autoencode_loss_weight_alpha: decrease autoencode loss weight from 1...alpha
+    :param autoencode_loss_weight_beta: decrease autoencode loss weight from 1...alpha until max_steps*beta steps reached
+    :return:
+    """
+    loss = _compute_translation_loss(
+        logits=logits,
+        target_tensor=target_tensor,
+        pad_token_id=pad_token_id,
+        eot_token_id=eot_token_id,
+        label_smoothing=label_smoothing
+    )
+    if include_autoencode_loss:
+        l_ae = _compute_autoencoding_loss(
+            logits=logits,
+            target_tensor=target_tensor,
+            pad_token_id=pad_token_id,
+            eot_token_id=eot_token_id
+        )
+
+        beta = autoencode_loss_weight_beta * max_steps
+        if step_num <= beta:
+            # linear decrease from step 0...beta starting from 1...alpha
+            autoencode_weight = 1.0 - (step_num / beta) * autoencode_loss_weight_alpha
+        else:
+            # linear decrease from alpha...0
+            autoencode_weight = autoencode_loss_weight_alpha * (max_steps - step_num) / (max_steps - beta)
+
+        loss += autoencode_weight * l_ae
+
+    return loss
 
 def _compute_bleu_score(
     decoded_ids: torch.tensor,
@@ -125,13 +201,16 @@ def _aggregate_metric(local_values: torch.tensor):
 def estimate_performance_metrics(
     train_loader: DataLoader,
     val_loader: DataLoader,
-    criterion,
     model: EncoderDecoderRNN | EncoderDecoderTransformer,
     tokenizer: SentencePieceTokenizer | Encoding,
     epoch: int,
     eval_iters: int = 200,
+    max_steps: Optional[int] = None,
+    step_num: Optional[int] = None,
     max_new_tokens: Optional[int] = None,
-    estimate_bleu: bool = True
+    estimate_bleu: bool = True,
+    label_smoothing: float = 0.0,
+    include_autoencode_loss: bool = True
 ):
     out = {"train": {}, "val": {}}
     model.eval()
@@ -208,7 +287,19 @@ def estimate_performance_metrics(
                 eot_token_id=val_loader.dataset.eot_token_id
             )
 
-            loss = _compute_loss(logits, combined_target_tensor if combined_target_tensor is not None else target_tensor, criterion, train_loader)
+            if _model_isinstance(m=model, type=DecoderTransformer):
+                loss = _compute_multi_task_translation_loss(
+                    logits=logits,
+                    target_tensor=combined_target_tensor if combined_target_tensor is not None else target_tensor,
+                    pad_token_id=val_data_loader.dataset.pad_token_id,
+                    eot_token_id=val_data_loader.dataset.eot_token_id,
+                    max_steps=max_steps,
+                    step_num=step_num,
+                    include_autoencode_loss=include_autoencode_loss,
+                    label_smoothing=label_smoothing
+                )
+            else:
+                loss = _compute_loss(logits, combined_target_tensor if combined_target_tensor is not None else target_tensor, pad_token_id=val_data_loader.dataset.pad_token_id, label_smoothing=label_smoothing)
             local_losses[eval_iter] = loss
 
             if estimate_bleu:
@@ -261,8 +352,9 @@ def train_epoch(
     val_data_loader: DataLoader,
     model: EncoderDecoderRNN | EncoderDecoderTransformer,
     optimizer,
-    criterion,
     epoch: int,
+    pad_token_id: int,
+    n_epochs: int,
     model_weights_out_dir: Path,
     best_bleu_score: float,
     tokenizer: SentencePieceTokenizer | Encoding,
@@ -272,7 +364,9 @@ def train_epoch(
     accuracy_eval_interval: int = 10000,
     eval_iters: int = 200,
     autocast_context: ContextManager = nullcontext(),
-    max_new_inference_tokens: Optional[int] = None
+    max_new_inference_tokens: Optional[int] = None,
+    label_smoothing: float = 0.0,
+    include_autoencode_loss: bool = True
 ):
     scaler = torch.cuda.amp.GradScaler(enabled=torch.get_autocast_gpu_dtype() == torch.float16)
 
@@ -324,13 +418,16 @@ def train_epoch(
                 metrics = estimate_performance_metrics(
                     train_loader=train_data_loader,
                     val_loader=val_data_loader,
-                    criterion=criterion,
                     model=model,
                     eval_iters=eval_iters,
                     epoch=epoch,
                     max_new_tokens=max_new_inference_tokens,
                     estimate_bleu=global_iter_num % accuracy_eval_interval == 0,
-                    tokenizer=tokenizer
+                    tokenizer=tokenizer,
+                    label_smoothing=label_smoothing,
+                    step_num=global_iter_num,
+                    max_steps=len(train_data_loader) * n_epochs,
+                    include_autoencode_loss=include_autoencode_loss,
                 )
 
             if is_master_process():
@@ -384,24 +481,23 @@ def train_epoch(
                 else:
                     raise ValueError(f'unknown model {type(model)}')
 
-            batch_size = target_tensor.shape[0]
-            C = logits.shape[-1]
-
             if combined_target_tensor is not None:
                 target_tensor = combined_target_tensor
-            T = target_tensor.shape[-1]
 
-            # if decoder_outputs shorter than target_tensor, pad it so that shapes match
-            logits = torch.nn.functional.pad(
-                logits,
-                (0, 0, 0, max(0, target_tensor.shape[1] - logits.shape[1])),
-                value=val_data_loader.dataset.pad_token_id,
-            )
+            if _model_isinstance(m=model, type=DecoderTransformer):
+                loss = _compute_multi_task_translation_loss(
+                    logits=logits,
+                    target_tensor=target_tensor,
+                    pad_token_id=pad_token_id,
+                    eot_token_id=val_data_loader.dataset.eot_token_id,
+                    step_num=global_iter_num,
+                    max_steps=len(train_data_loader) * n_epochs,
+                    include_autoencode_loss=include_autoencode_loss,
+                    label_smoothing=label_smoothing
+                )
 
-            loss = criterion(
-                logits.reshape(batch_size * T, C),
-                target_tensor.view(batch_size * T),
-            )
+            else:
+                loss = _compute_loss(logits=logits, target_tensor=target_tensor, pad_token_id=pad_token_id, label_smoothing=label_smoothing)
 
         scaler.scale(loss).backward()
 
@@ -589,13 +685,10 @@ def train(
     accuracy_eval_interval: int = 10000,
     eval_iters: int = 200,
     label_smoothing: float = 0.0,
-    use_mixed_precision: bool = True,
     autocast_context: ContextManager = nullcontext(),
     max_new_inference_tokens: Optional[int] = None
 ):
     os.makedirs(model_weights_out_dir, exist_ok=True)
-
-    criterion = nn.CrossEntropyLoss(ignore_index=pad_token_id, label_smoothing=label_smoothing)
 
     best_bleu_score = -float("inf")
 
@@ -608,7 +701,8 @@ def train(
             val_data_loader=val_dataloader,
             model=model,
             optimizer=optimizer,
-            criterion=criterion,
+            pad_token_id=pad_token_id,
+            label_smoothing=label_smoothing,
             epoch=epoch,
             decay_learning_rate=decay_learning_rate,
             learning_rate_decay_config=LearningRateDecayConfig(
@@ -623,7 +717,8 @@ def train(
             accuracy_eval_interval=accuracy_eval_interval,
             autocast_context=autocast_context,
             max_new_inference_tokens=max_new_inference_tokens,
-            tokenizer=tokenizer
+            tokenizer=tokenizer,
+            n_epochs=n_epochs
         )
 
 

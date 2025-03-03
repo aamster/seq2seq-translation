@@ -53,6 +53,7 @@ class Config(BaseModel):
     label_smoothing: float = 0.0
     use_mixed_precision: bool = True
     decoder_only: bool = False
+    include_autoencode_loss: bool = True    # whether loss = l_ae + l_mt or just l_mt. only relevant when decoder_only
 
     class Config:
         extra = "forbid"
