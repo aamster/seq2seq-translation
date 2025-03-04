@@ -74,14 +74,10 @@ def _compute_loss(
     loss_type: LossType,
     label_smoothing: float = 0.0,
 ):
-    batch_size = target_tensor.shape[0]
-    C = logits.shape[-1]
-
-    T = target_tensor.shape[-1]
-
+    C = logits.size(-1)
     if loss_type == LossType.CROSS_ENTROPY:
         loss = F.cross_entropy(
-            logits.reshape(batch_size * T, C), target_tensor.view(batch_size * T),
+            logits.view(-1, C), target_tensor.view(-1),
             ignore_index=pad_token_id,
             label_smoothing=label_smoothing
         )
@@ -114,15 +110,25 @@ def _compute_translation_loss(
     eot_token_id: int,
     label_smoothing: float = 0.0,
 ):
-    # argmax here will find the 1st occurrence
-    eot = torch.argmax((target_tensor == eot_token_id).int(), dim=1)
+    C = logits.shape[-1]
+    B, T = target_tensor.shape
 
-    loss_target = [
-        F.cross_entropy(logits[i, idx + 1:, :], target_tensor[i, idx + 1:],
-                        ignore_index=pad_token_id, label_smoothing=label_smoothing)
-        for i, idx in enumerate(eot)
-    ]
-    loss = torch.stack(loss_target).mean()
+    # Compute the first occurrence of eot in each sequence
+    eot_positions = torch.argmax((target_tensor == eot_token_id).int(), dim=1)  # shape: (B,)
+
+    positions = torch.arange(T, device=target_tensor.device).unsqueeze(0)  # shape: (1, T)
+
+    target_mask = (positions > eot_positions.unsqueeze(1) ).reshape(-1)  # shape: (B*T,)
+
+    logits = logits.reshape(-1, C)[target_mask]
+    targets = target_tensor.reshape(-1) [target_mask]
+
+    loss = F.cross_entropy(
+        logits,
+        targets,
+        ignore_index=pad_token_id,
+        label_smoothing=label_smoothing
+    )
     return loss
 
 def _compute_autoencoding_loss(
@@ -131,16 +137,24 @@ def _compute_autoencoding_loss(
     pad_token_id: int,
     eot_token_id: int,
 ):
-    # argmax here will find the 1st occurrence
-    eot = torch.argmax((target_tensor == eot_token_id).int(), dim=1)
+    C = logits.shape[-1]
+    B, T = target_tensor.shape
 
-    loss_source = [
-        F.cross_entropy(logits[i, :idx + 1, :], target_tensor[i, :idx + 1],
-                        ignore_index=pad_token_id)
-        for i, idx in enumerate(eot)
-    ]
-    loss = torch.stack(loss_source).mean()
+    # Compute the first occurrence of eot in each sequence
+    eot_positions = torch.argmax((target_tensor == eot_token_id).int(), dim=1)  # shape: (B,)
 
+    positions = torch.arange(T, device=target_tensor.device).unsqueeze(0)  # shape: (1, T)
+
+    target_mask = (positions <= eot_positions.unsqueeze(1) ).reshape(-1)  # shape: (B*T,)
+
+    logits = logits.reshape(-1, C)[target_mask]
+    targets = target_tensor.reshape(-1) [target_mask]
+
+    loss = F.cross_entropy(
+        logits,
+        targets,
+        ignore_index=pad_token_id,
+    )
     return loss
 
 def _compute_multi_task_translation_loss(
