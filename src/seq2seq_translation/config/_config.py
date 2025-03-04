@@ -14,6 +14,11 @@ class TokenizerType(Enum):
     SENTENCEPIECE = 'sentencepiece'
     TIKTOKEN = 'tiktoken'
 
+class LossType(Enum):
+    CROSS_ENTROPY = 'cross_entropy'
+    TRANSLATION = 'translation'
+    AUTOENCODE_TRANSLATION = 'autoencode_translation'
+
 class Config(BaseModel):
     architecture_type: ModelType
     batch_size: int = 128
@@ -53,8 +58,8 @@ class Config(BaseModel):
     label_smoothing: float = 0.0
     use_mixed_precision: bool = True
     decoder_only: bool = False
-    include_autoencode_loss: bool = True    # whether loss = l_ae + l_mt or just l_mt. only relevant when decoder_only
-    model_dtype: str = 'float16'
+    loss_type: LossType = LossType.AUTOENCODE_TRANSLATION
+    dtype: str = 'float16'
 
     class Config:
         extra = "forbid"
