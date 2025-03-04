@@ -54,6 +54,7 @@ class Config(BaseModel):
     use_mixed_precision: bool = True
     decoder_only: bool = False
     include_autoencode_loss: bool = True    # whether loss = l_ae + l_mt or just l_mt. only relevant when decoder_only
+    model_dtype: str = 'float16'
 
     class Config:
         extra = "forbid"

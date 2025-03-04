@@ -154,11 +154,8 @@ def main(config: RNNConfig | TransformerConfig):
 
         else:
             if config.tokenizer_type == TokenizerType.SENTENCEPIECE:
-                tokenizer_model_path = (
-                        Path(config.sentence_piece_model_dir)
-                )
                 tokenizer = SentencePieceTokenizer(
-                    model_prefix=str(tokenizer_model_path)
+                    model_prefix=str(Path(config.sentence_piece_model_dir) / Path(config.sentence_piece_model_dir).name)
                 )
 
                 eot_token_id = tokenizer.processor.eos_id()
@@ -361,7 +358,7 @@ def main(config: RNNConfig | TransformerConfig):
             model = DDP(model, device_ids=[distributed_context.ddp_local_rank])
 
         if device.type == "cuda" and config.use_mixed_precision:
-            if torch.cuda.is_bf16_supported():
+            if config.model_dtype == 'bfloat16':
                 model_dtype = torch.bfloat16
             else:
                 model_dtype = torch.float16

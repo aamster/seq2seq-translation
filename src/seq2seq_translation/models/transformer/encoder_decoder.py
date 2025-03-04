@@ -146,6 +146,8 @@ class EncoderDecoderTransformer(nn.Module):
         """
         n_params = sum(p.numel() for p in self.parameters())
         if non_embedding:
-            n_params -= self.encoder.positional_encoding.weight.numel()
-            n_params -= self.decoder.positional_encoding.weight.numel()
+            if self.encoder.positional_embedding is not None:
+                n_params -= self.encoder.positional_embedding.weight.numel()
+            if self.decoder.positional_embedding is not None:
+                n_params -= self.decoder.positional_embedding.weight.numel()
         return n_params
