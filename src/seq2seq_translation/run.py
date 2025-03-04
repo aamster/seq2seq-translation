@@ -358,9 +358,9 @@ def main(config: RNNConfig | TransformerConfig):
             model = DDP(model, device_ids=[distributed_context.ddp_local_rank])
 
         if device.type == "cuda" and config.use_mixed_precision:
-            if config.model_dtype == 'bfloat16':
+            if config.dtype == 'bfloat16':
                 model_dtype = torch.bfloat16
-            else:
+            elif config.dtype == 'float16':
                 model_dtype = torch.float16
 
             ctx = torch.amp.autocast(device.type, dtype=model_dtype)
@@ -415,7 +415,7 @@ def main(config: RNNConfig | TransformerConfig):
                 label_smoothing=config.label_smoothing,
                 autocast_context=ctx,
                 max_new_inference_tokens=config.decoder_num_timesteps,
-                pad_token_id=tokenizer.pad_idx
+                loss_type=config.loss_type
             )
 
 
