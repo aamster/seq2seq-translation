@@ -168,6 +168,7 @@ class DecoderTransformer(_Transformer):
         temperature: float = 1.0,
         top_k: Optional[int] = None,
         max_new_tokens: Optional[int] = None,
+        return_logits: bool = False
     ):
         if include_input:
             generated_tokens = torch.tensor(x, dtype=torch.long).to(x.device)
@@ -205,8 +206,10 @@ class DecoderTransformer(_Transformer):
             # Stop if all sequences in the batch generated <eos>
             if (next_token == eot_token_id).all():
                 break
-        logits = torch.cat(all_logits, dim=1)
-        return generated_tokens, logits
+        if return_logits:
+            return generated_tokens, torch.cat(all_logits, dim=1)
+        else:
+            return generated_tokens
 
     @property
     def num_params(self, non_embedding: bool = True):

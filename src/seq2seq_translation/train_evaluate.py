@@ -145,7 +145,7 @@ def _compute_autoencoding_loss(
 
     positions = torch.arange(T, device=target_tensor.device).unsqueeze(0)  # shape: (1, T)
 
-    target_mask = (positions <= eot_positions.unsqueeze(1) ).reshape(-1)  # shape: (B*T,)
+    target_mask = (positions < eot_positions.unsqueeze(1) ).reshape(-1)  # shape: (B*T,)
 
     logits = logits.reshape(-1, C)[target_mask]
     targets = target_tensor.reshape(-1) [target_mask]
@@ -634,7 +634,7 @@ def inference(
                     f'unknown model type {type(_model_isinstance(m=model))}')
 
         if do_test_time_inference:
-            decoded_ids, _ = _unwrap_model(m=model).generate(x=input_tensor, top_k=1, max_new_tokens=max_new_tokens, pad_token_id=pad_token_id, eot_token_id=eot_token_id)
+            decoded_ids = _unwrap_model(m=model).generate(x=input_tensor, top_k=1, max_new_tokens=max_new_tokens, pad_token_id=pad_token_id, eot_token_id=eot_token_id)
         else:
             if get_input_logits:
                 probs = F.softmax(logits, dim=-1)
@@ -648,12 +648,12 @@ def inference(
 
 @torch.no_grad()
 def evaluate(
-    encoder_decoder: EncoderDecoderRNN,
+    model: EncoderDecoderRNN | EncoderDecoderTransformer | DecoderTransformer,
     data_loader: DataLoader,
     tokenizer: SentencePieceTokenizer,
     sequence_generator_type: Type[SequenceGenerator] = BeamSearchSequenceGenerator,
 ):
-    encoder_decoder.eval()
+    model.eval()
 
     decoded_sentences = []
     targets = []
@@ -664,7 +664,7 @@ def evaluate(
     for batch_idx, data in tqdm(
         enumerate(data_loader), total=len(data_loader), desc="eval"
     ):
-        input_tensor, target_tensor, _, batch_input_lengths = data
+        input_tensor, target_tensor, _, _, _, batch_input_lengths = data
 
         if torch.cuda.is_available():
             input_tensor = input_tensor.to(torch.device(os.environ["DEVICE"]))
@@ -673,7 +673,7 @@ def evaluate(
         bleu = huggingface_evaluate.load("bleu")
 
         sequence_generator = sequence_generator_type(
-            encoder_decoder=encoder_decoder,
+            model=model,
             tokenizer=tokenizer,
         )
         for i in range(len(input_tensor)):
@@ -701,7 +701,7 @@ def evaluate(
             targets.append(target)
             idx += 1
 
-    encoder_decoder.train()
+    model.train()
 
     bleu_score = bleu_scores.mean()
     return decoded_sentences, targets, bleu_score, bleu_scores, input_lengths

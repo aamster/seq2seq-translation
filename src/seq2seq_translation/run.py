@@ -57,6 +57,7 @@ def _remove_module_from_state_dict(state_dict: dict):
     new_state_dict = OrderedDict()
     for k, v in state_dict.items():
         name = k.replace("module.", "")  # remove `module.` prefix
+        name = name.replace('_orig_mod.', "")
         new_state_dict[name] = v
     return new_state_dict
 
