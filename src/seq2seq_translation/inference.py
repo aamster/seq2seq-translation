@@ -16,7 +16,6 @@ from seq2seq_translation.tokenization.sentencepiece_tokenizer import (
 )
 from loguru import logger
 
-
 class SequenceGenerator(abc.ABC):
     def __init__(
         self,
@@ -73,7 +72,7 @@ class BeamSearchSequenceGenerator(SequenceGenerator):
         self.max_length = max_length
 
     def generate(self, input_tensor: torch.tensor, input_lengths: list[int]):
-        logger.debug(f'input: {self._tokenizer.decode(input_tensor)}')
+        logger.trace(f'input: {self._tokenizer.decode(input_tensor)}')
         src_tensor = input_tensor.unsqueeze(0)
 
         if isinstance(self._model, (EncoderDecoderRNN, EncoderDecoderTransformer)):
@@ -112,10 +111,10 @@ class BeamSearchSequenceGenerator(SequenceGenerator):
                     for b in beams
                 ]
             ):
-                logger.debug("terminating")
+                logger.trace("terminating")
                 break
-            logger.debug(f"\nbeam search iter {beam_search_iter}")
-            logger.debug("=" * 11)
+            logger.trace(f"\nbeam search iter {beam_search_iter}")
+            logger.trace("=" * 11)
 
             for beam in beams:
                 decoder_input = beam['decoder_input']
@@ -204,9 +203,9 @@ class BeamSearchSequenceGenerator(SequenceGenerator):
                                 'score': new_score,
                             }
                         )
-            logger.debug("\nNew beams:")
+            logger.trace("\nNew beams:")
             for new_beam in new_beams:
-                logger.debug(
+                logger.trace(
                     " ".join(
                         [self._tokenizer.decode(new_beam['decoded_sequence']), f"{new_beam['score']:.3f}"]
                     )
@@ -217,16 +216,16 @@ class BeamSearchSequenceGenerator(SequenceGenerator):
                 : self.beam_width
             ]
 
-            logger.debug("\nBeams:")
+            logger.trace("\nBeams:")
             for beam in beams:
-                logger.debug(
+                logger.trace(
                     " ".join([self._tokenizer.decode(beam['decoded_sequence']), f"{beam['score']:.3f}"])
                 )
 
             if all_candidates:
-                logger.debug(f"\ncompleted\n\n")
+                logger.trace(f"\ncompleted\n\n")
                 for completed in all_candidates:
-                    logger.debug(
+                    logger.trace(
                         " ".join(
                             [
                                 self._tokenizer.decode(completed['decoded_sequence']),
@@ -241,9 +240,9 @@ class BeamSearchSequenceGenerator(SequenceGenerator):
         preds = sorted(all_candidates, key=lambda x: x['score'], reverse=True)
         preds = [[self._tokenizer.decode(x['decoded_sequence']), x['score']] for x in preds]
 
-        logger.debug("\nfinal list of preds\n===========\n")
+        logger.trace("\nfinal list of preds\n===========\n")
         for pred in preds:
-            logger.debug(" ".join([pred[0], f"{pred[1]:.3f}"]))
+            logger.trace(" ".join([pred[0], f"{pred[1]:.3f}"]))
 
         return preds
 

@@ -127,19 +127,21 @@ def main(config: RNNConfig | TransformerConfig):
         else:
             rng = None
 
-        train_offsets = np.memmap(config.tokenized_dir / 'train_offsets.bin', dtype=np.uint64)
-        train_tokenized = np.memmap(config.tokenized_dir / 'train.bin', dtype=np.uint16)
+        if not config.is_test:
+            train_offsets = np.memmap(config.tokenized_dir / 'train_offsets.bin', dtype=np.uint64)
+            train_tokenized = np.memmap(config.tokenized_dir / 'train.bin', dtype=np.uint16)
 
-        val_offsets = np.memmap(config.tokenized_dir / 'val_offsets.bin', dtype=np.uint64)
-        val_tokenized = np.memmap(config.tokenized_dir / 'val.bin', dtype=np.uint16)
+            val_offsets = np.memmap(config.tokenized_dir / 'val_offsets.bin', dtype=np.uint64)
+            val_tokenized = np.memmap(config.tokenized_dir / 'val.bin', dtype=np.uint16)
 
-        # -1 because it goes until 1 past the last sequence
-        train_idxs = np.arange(len(train_offsets)-1)
-        rng.shuffle(train_idxs)
+            # -1 because it goes until 1 past the last sequence
+            train_idxs = np.arange(len(train_offsets)-1)
+            rng.shuffle(train_idxs)
 
-        # -1 because it goes until 1 past the last sequence
-        test_idxs = np.arange(len(val_offsets)-1)
-        rng.shuffle(test_idxs)
+            # -1 because it goes until 1 past the last sequence
+            test_idxs = np.arange(len(val_offsets)-1)
+            rng.shuffle(test_idxs)
+
 
         if config.decoder_only:
             if config.tokenizer_type == TokenizerType.SENTENCEPIECE:
@@ -173,23 +175,6 @@ def main(config: RNNConfig | TransformerConfig):
             print(f"Number of train examples after limiting: {len(train_idxs)}")
             print(f"Number of val examples after limiting: {len(test_idxs)}")
 
-        train_dset = SentencePairsDatasetFromPreprocessedTokens(
-            idxs=train_idxs,
-            combine_source_and_target=config.decoder_only,
-            tokenized_offsets=train_offsets,
-            tokenized=train_tokenized,
-            eot_token_id=eot_token_id,
-            pad_token_id=tokenizer.pad_idx
-        )
-        val_dset = SentencePairsDatasetFromPreprocessedTokens(
-            idxs=test_idxs,
-            combine_source_and_target=config.decoder_only,
-            tokenized_offsets=val_offsets,
-            tokenized=val_tokenized,
-            eot_token_id=eot_token_id,
-            pad_token_id=tokenizer.pad_idx
-        )
-
         if config.is_test:
             test_datasets = LanguagePairsDatasets(
                 out_dir=Path(config.datasets_dir),
@@ -215,22 +200,41 @@ def main(config: RNNConfig | TransformerConfig):
                 collate_fn=CollateFunction(pad_token_id=tokenizer.pad_idx),
             )
 
-        train_sampler = DistributedSampler(train_dset) if config.use_ddp else None
-        train_data_loader = DataLoader(
-            dataset=train_dset,
-            shuffle=(train_sampler is None),
-            batch_size=config.batch_size,
-            collate_fn=CollateFunction(pad_token_id=tokenizer.pad_idx, fixed_length=config.fixed_length),
-            sampler=train_sampler,
-            num_workers=config.num_train_dataloader_num_workers,
-            pin_memory=True,
-        )
-        val_data_loader = DataLoader(
-            dataset=val_dset,
-            shuffle=False,
-            batch_size=config.batch_size,
-            collate_fn=CollateFunction(pad_token_id=tokenizer.pad_idx),
-        )
+        else:
+            train_dset = SentencePairsDatasetFromPreprocessedTokens(
+                idxs=train_idxs,
+                combine_source_and_target=config.decoder_only,
+                tokenized_offsets=train_offsets,
+                tokenized=train_tokenized,
+                eot_token_id=eot_token_id,
+                pad_token_id=tokenizer.pad_idx
+            )
+            val_dset = SentencePairsDatasetFromPreprocessedTokens(
+                idxs=test_idxs,
+                combine_source_and_target=config.decoder_only,
+                tokenized_offsets=val_offsets,
+                tokenized=val_tokenized,
+                eot_token_id=eot_token_id,
+                pad_token_id=tokenizer.pad_idx
+            )
+
+            train_sampler = DistributedSampler(train_dset) if config.use_ddp else None
+            train_data_loader = DataLoader(
+                dataset=train_dset,
+                shuffle=(train_sampler is None),
+                batch_size=config.batch_size,
+                collate_fn=CollateFunction(pad_token_id=tokenizer.pad_idx,
+                                           fixed_length=config.fixed_length),
+                sampler=train_sampler,
+                num_workers=config.num_train_dataloader_num_workers,
+                pin_memory=True,
+            )
+            val_data_loader = DataLoader(
+                dataset=val_dset,
+                shuffle=False,
+                batch_size=config.batch_size,
+                collate_fn=CollateFunction(pad_token_id=tokenizer.pad_idx),
+            )
 
         device = "cuda" if torch.cuda.is_available() else "cpu"
 
