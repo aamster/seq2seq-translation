@@ -67,7 +67,7 @@ class BeamSearchSequenceGenerator(SequenceGenerator):
         self,
         model: EncoderDecoderRNN | EncoderDecoderTransformer,
         tokenizer: SentencePieceTokenizer,
-        beam_width=10,
+        beam_width=4,
         max_length=72,
     ):
         super().__init__(model=model, tokenizer=tokenizer)
@@ -75,6 +75,7 @@ class BeamSearchSequenceGenerator(SequenceGenerator):
         self.max_length = max_length
 
     def generate(self, input_tensor: torch.tensor, input_lengths: list[int]):
+        logger.debug(f'input: {self._tokenizer.decode(input_tensor)}')
         src_tensor = input_tensor.unsqueeze(0)
 
         if isinstance(self._model, (EncoderDecoderRNN, EncoderDecoderTransformer)):
@@ -181,10 +182,16 @@ class BeamSearchSequenceGenerator(SequenceGenerator):
                         [decoded_sequence, next_token_id], dim=1
                     )
                     new_score = score + torch.log(topk_scores[:, :, k]).item()
+                    if isinstance(self._model, EncoderDecoderRNN):
+                        new_decoder_input = next_token_id
+                    elif isinstance(self._model, DecoderTransformer):
+                        new_decoder_input = torch.cat((decoder_input, next_token_id), dim=1)
+                    else:
+                        raise NotImplementedError
                     if next_token_id == self._tokenizer.processor.eos_id():
                         all_candidates.append(
                             {
-                                'decoder_input': next_token_id,
+                                'decoder_input': new_decoder_input,
                                 'decoder_hidden': new_decoder_hidden,
                                 'decoded_sequence': new_decoded_sequence,
                                 'score': new_score,
@@ -193,7 +200,7 @@ class BeamSearchSequenceGenerator(SequenceGenerator):
                     else:
                         new_beams.append(
                             {
-                                'decoder_input': next_token_id,
+                                'decoder_input': new_decoder_input,
                                 'decoder_hidden': new_decoder_hidden,
                                 'decoded_sequence': new_decoded_sequence,
                                 'score': new_score,
