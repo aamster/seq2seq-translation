@@ -16,8 +16,6 @@ from seq2seq_translation.tokenization.sentencepiece_tokenizer import (
 )
 from loguru import logger
 
-logger.level('DEBUG')
-
 
 class SequenceGenerator(abc.ABC):
     def __init__(
