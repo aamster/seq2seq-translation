@@ -19,6 +19,8 @@ class SentencePairsDatasetFromPreprocessedTokens(Dataset):
         tokenized: np.memmap,
         eot_token_id: int,
         pad_token_id: int,
+        source_language_tag_token_id: int,
+        target_language_tag_token_id: int,
         combine_source_and_target: bool = False,
     ):
         """
@@ -34,6 +36,8 @@ class SentencePairsDatasetFromPreprocessedTokens(Dataset):
         self._tokenized = tokenized
         self._eot_token_id = eot_token_id
         self._pad_token_id = pad_token_id
+        self._source_language_tag_token_id = source_language_tag_token_id
+        self._target_language_tag_token_id = target_language_tag_token_id
         self._combine_source_and_target = combine_source_and_target
 
     @property
@@ -53,14 +57,20 @@ class SentencePairsDatasetFromPreprocessedTokens(Dataset):
         x = self._tokenized[self._tokenized_offsets[idx]:self._tokenized_offsets[idx+1]]
         x = torch.from_numpy(x.astype(np.int64))
 
+        source_end = torch.where(x == self._eot_token_id)[0][0].item()
+        source = x[:source_end+1]
+        target = x[source_end+1:]
+
+        # adding a language tag to denote start of language text per "Language models are good translators", Wang et al
+        x = torch.concatenate([torch.tensor([self._source_language_tag_token_id]), source, torch.tensor([self._target_language_tag_token_id]), target])
+
+        source = x[:source_end+1]
+        target = x[source_end+1:]
+
         if self._combine_source_and_target:
             combined_target = torch.cat([x[1:], torch.tensor([self._pad_token_id])])
         else:
             combined_target = None
-
-        source_end = torch.where(x == self._eot_token_id)[0][0].item()
-        source = x[:source_end+1]
-        target = x[source_end+1:]
 
         return source, target, x, combined_target, None
 

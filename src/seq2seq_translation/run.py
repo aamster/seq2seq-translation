@@ -207,7 +207,9 @@ def main(config: RNNConfig | TransformerConfig):
                 tokenized_offsets=train_offsets,
                 tokenized=train_tokenized,
                 eot_token_id=eot_token_id,
-                pad_token_id=tokenizer.pad_idx
+                pad_token_id=tokenizer.pad_idx,
+                source_language_tag_token_id=tokenizer.language_tag_map[config.source_lang],
+                target_language_tag_token_id=tokenizer.language_tag_map[config.target_lang]
             )
             val_dset = SentencePairsDatasetFromPreprocessedTokens(
                 idxs=test_idxs,
@@ -215,7 +217,9 @@ def main(config: RNNConfig | TransformerConfig):
                 tokenized_offsets=val_offsets,
                 tokenized=val_tokenized,
                 eot_token_id=eot_token_id,
-                pad_token_id=tokenizer.pad_idx
+                pad_token_id=tokenizer.pad_idx,
+                source_language_tag_token_id=tokenizer.language_tag_map[config.source_lang],
+                target_language_tag_token_id=tokenizer.language_tag_map[config.target_lang]
             )
 
             train_sampler = DistributedSampler(train_dset) if config.use_ddp else None
@@ -309,7 +313,7 @@ def main(config: RNNConfig | TransformerConfig):
                     model = DecoderTransformer(
                         n_attention_heads=config.n_head,
                         n_layers=config.num_layers,
-                        vocab_size=tokenizer.processor.vocab_size() if isinstance(tokenizer, SentencePieceTokenizer) else tokenizer.vocab_size,
+                        vocab_size=tokenizer.vocab_size,
                         d_model=config.d_model,
                         block_size=config.fixed_length,
                         feedforward_hidden_dim=config.feedforward_hidden_dim,
@@ -323,7 +327,7 @@ def main(config: RNNConfig | TransformerConfig):
                 model = EncoderDecoderTransformer(
                     n_attention_heads=config.n_head,
                     n_layers=config.num_layers,
-                    vocab_size=tokenizer.processor.vocab_size() if isinstance(tokenizer, SentencePieceTokenizer) else tokenizer.vocab_size,
+                    vocab_size=tokenizer.vocab_size,
                     d_model=config.d_model,
                     block_size=config.max_input_length,
                     feedforward_hidden_dim=config.feedforward_hidden_dim,

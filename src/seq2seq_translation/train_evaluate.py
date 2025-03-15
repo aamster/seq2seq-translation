@@ -9,7 +9,6 @@ from typing import Optional, Type, ContextManager
 import torch
 import wandb
 from tiktoken import Encoding
-from torch import nn
 import torch.nn.functional as F
 from torch.nn.parallel import DistributedDataParallel
 from torch.utils.data import (
@@ -446,7 +445,7 @@ def train_epoch(
             for param_group in optimizer.param_groups:
                 param_group["lr"] = lr
         else:
-            lr = optimizer.lr
+            lr = optimizer.param_groups[0]["lr"]
 
         if global_iter_num % loss_eval_interval == 0:
             if is_master_process():

@@ -70,6 +70,14 @@ class SentencePieceTokenizer:
         return 2
 
     @property
+    def language_tag_map(self) -> dict[str, int]:
+        vocab_size = len(self.vocab)
+        return {
+            'en': vocab_size,
+            'fr': vocab_size + 1
+        }
+
+    @property
     def processor(self):
         return self._processor
 
@@ -79,6 +87,10 @@ class SentencePieceTokenizer:
             [self.processor.id_to_piece(idx), idx]
             for idx in range(self.processor.get_piece_size())
         )
+
+    @property
+    def vocab_size(self) -> int:
+        return len(self.vocab) + len(self.language_tag_map)
 
     def train(self):
         spm.SentencePieceTrainer.train(**self._options)
@@ -96,10 +108,9 @@ class SentencePieceTokenizer:
         if len(token_ids.shape) == 1:
             token_ids = token_ids.reshape(1, -1)
         for tokens in token_ids:
-            eos_idx = torch.where(tokens == self.processor.eos_id())[0]
-            if len(eos_idx) > 0:
-                eos_idx = eos_idx[0]
-                tokens = tokens[:eos_idx]
+            # ignore language tag
+            tokens = tokens[~(torch.isin(tokens, torch.tensor(list(self.language_tag_map.values()), device=token_ids.device)))]
+
             decoded.append(self.processor.decode(tokens.tolist()))
         if len(decoded) == 1:
             decoded = decoded[0]
