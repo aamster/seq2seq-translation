@@ -64,8 +64,8 @@ class SentencePairsDatasetFromPreprocessedTokens(Dataset):
         # adding a language tag to denote start of language text per "Language models are good translators", Wang et al
         x = torch.concatenate([torch.tensor([self._source_language_tag_token_id]), source, torch.tensor([self._target_language_tag_token_id]), target])
 
-        source = x[:source_end+1]
-        target = x[source_end+1:]
+        source = x[:source_end+2]
+        target = x[source_end+2:]
 
         if self._combine_source_and_target:
             combined_target = torch.cat([x[1:], torch.tensor([self._pad_token_id])])
