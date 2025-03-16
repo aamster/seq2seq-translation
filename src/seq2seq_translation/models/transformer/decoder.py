@@ -170,6 +170,69 @@ class DecoderTransformer(_Transformer):
         max_new_tokens: Optional[int] = None,
         return_logits: bool = False
     ):
+        """
+        Generates next token predictions for `max_new_tokens` timesteps for a set of examples
+
+        :param x: expects batch dimension to be 1st
+        :param eot_token_id:
+        :param pad_token_id:
+        :param include_input:
+        :param temperature:
+        :param top_k:
+        :param max_new_tokens:
+        :param return_logits:
+        :return:
+        """
+        decoded_ids = []
+        for example in x:
+            # truncate at eot token (exclude padding)
+            example = example[:torch.where(example == eot_token_id)[0].item() + 1]
+            # place batch dim 1st
+            example = example.unsqueeze(0)
+
+            decoded_ids_ = self._generate_single(
+                x=example, top_k=top_k,
+                max_new_tokens=max_new_tokens, pad_token_id=pad_token_id,
+                eot_token_id=eot_token_id, include_input=include_input, temperature=temperature, return_logits=return_logits)
+            decoded_ids.append(decoded_ids_[0])
+
+        decoded_ids_padded = torch.ones((len(decoded_ids), max([len(x) for x in decoded_ids])),
+                                        dtype=torch.long, device=x.device)
+        decoded_ids_padded[:] = pad_token_id
+        for i in range(len(decoded_ids)):
+            decoded_ids_padded[i, :len(decoded_ids[i])] = decoded_ids[i]
+        decoded_ids = decoded_ids_padded
+        return decoded_ids
+
+    @torch.no_grad()
+    def _generate_single(
+        self,
+        x: torch.tensor,
+        eot_token_id: int,
+        pad_token_id: int,
+        include_input: bool = False,
+        temperature: float = 1.0,
+        top_k: Optional[int] = None,
+        max_new_tokens: Optional[int] = None,
+        return_logits: bool = False
+    ):
+        """
+        Generates next token predictions for `max_new_tokens` timesteps for a single example
+
+        This could handle multiple examples but to pass multiple examples we need to pad, but
+        in the training data, we padded after concatenating source+target, and so the model made
+        mistakes because it never saw padded source
+
+        :param x: expected to be batch size of 1
+        :param eot_token_id:
+        :param pad_token_id:
+        :param include_input:
+        :param temperature:
+        :param top_k:
+        :param max_new_tokens:
+        :param return_logits:
+        :return:
+        """
         if include_input:
             generated_tokens = torch.tensor(x, dtype=torch.long).to(x.device)
         else:

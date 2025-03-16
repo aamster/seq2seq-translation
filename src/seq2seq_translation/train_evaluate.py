@@ -643,7 +643,10 @@ def inference(
                     f'unknown model type {type(_model_isinstance(m=model))}')
 
         if do_test_time_inference:
-            decoded_ids = _unwrap_model(m=model).generate(x=input_tensor, top_k=1, max_new_tokens=max_new_tokens, pad_token_id=pad_token_id, eot_token_id=eot_token_id)
+            decoded_ids = _unwrap_model(m=model).generate(
+                x=input_tensor, top_k=1,
+                max_new_tokens=max_new_tokens, pad_token_id=pad_token_id,
+                eot_token_id=eot_token_id)
         else:
             if get_input_logits:
                 probs = F.softmax(logits, dim=-1)
