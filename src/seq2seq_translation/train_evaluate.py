@@ -156,6 +156,18 @@ def _compute_autoencoding_loss(
     )
     return loss
 
+def _calc_autoencode_weight(alpha: float, beta: float, step_num: int, max_steps: int):
+    beta *= max_steps
+    if step_num <= beta:
+        # linear decrease from step 0...beta starting from 1...alpha
+        slope = ((alpha - 1) / beta)
+        intercept = 1
+        autoencode_weight = slope * step_num + intercept
+    else:
+        # linear decrease from alpha...0
+        autoencode_weight = alpha * (max_steps - step_num) / (max_steps - beta)
+    return autoencode_weight
+
 def _compute_multi_task_translation_loss(
     logits: torch.tensor,
     target_tensor: torch.tensor,
@@ -190,14 +202,12 @@ def _compute_multi_task_translation_loss(
         eot_token_id=eot_token_id
     )
 
-    beta = autoencode_loss_weight_beta * max_steps
-    if step_num <= beta:
-        # linear decrease from step 0...beta starting from 1...alpha
-        autoencode_weight = 1.0 - (step_num / beta) * autoencode_loss_weight_alpha
-    else:
-        # linear decrease from alpha...0
-        autoencode_weight = autoencode_loss_weight_alpha * (max_steps - step_num) / (max_steps - beta)
-
+    autoencode_weight = _calc_autoencode_weight(
+        alpha=autoencode_loss_weight_alpha,
+        beta=autoencode_loss_weight_beta,
+        max_steps=max_steps,
+        step_num=step_num
+    )
     loss += autoencode_weight * l_ae
 
     return loss
