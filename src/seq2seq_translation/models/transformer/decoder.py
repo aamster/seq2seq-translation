@@ -186,8 +186,8 @@ class DecoderTransformer(_Transformer):
         decoded_ids = []
         logits = []
         for example in x:
-            # truncate at eot token (exclude padding)
-            example = example[:torch.where(example == eot_token_id)[0].item() + 1]
+            # exclude padding
+            example = example[example != pad_token_id]
             # place batch dim 1st
             example = example.unsqueeze(0)
 
