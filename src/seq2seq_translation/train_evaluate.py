@@ -724,7 +724,7 @@ def train(
     best_bleu_score = -float("inf")
 
     for epoch in range(1, n_epochs + 1):
-        if isinstance(train_dataloader, DistributedSampler):
+        if isinstance(train_dataloader.sampler, DistributedSampler):
             train_dataloader.sampler.set_epoch(epoch=epoch)
 
         _, best_bleu_score = train_epoch(
