@@ -651,8 +651,8 @@ def evaluate(
 
     decoded_sentences = []
     targets = []
-    bleu_scores = torch.zeros(len(data_loader.dataset))
-    input_lengths = torch.zeros(len(data_loader.dataset))
+    bleu_scores = []
+    input_lengths = []
     idx = 0
 
     for batch_idx, data in tqdm(
@@ -689,15 +689,15 @@ def evaluate(
                 )["bleu"]
             except ZeroDivisionError:
                 bleu_score = 0
-            bleu_scores[idx] = bleu_score
-            input_lengths[idx] = batch_input_lengths[i]
+            bleu_scores.append(bleu_score)
+            input_lengths.append(batch_input_lengths)
             decoded_sentences.append(pred)
             targets.append(target)
             idx += 1
 
     model.train()
 
-    bleu_score = bleu_scores.mean()
+    bleu_score = sum(bleu_scores) / len(bleu_scores)
     return decoded_sentences, targets, bleu_score, bleu_scores, input_lengths
 
 
