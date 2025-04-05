@@ -184,17 +184,24 @@ class DecoderTransformer(_Transformer):
         :return:
         """
         decoded_ids = []
+        logits = []
         for example in x:
             # truncate at eot token (exclude padding)
             example = example[:torch.where(example == eot_token_id)[0].item() + 1]
             # place batch dim 1st
             example = example.unsqueeze(0)
 
-            decoded_ids_ = self._generate_single(
+            res = self._generate_single(
                 x=example, top_k=top_k,
                 max_new_tokens=max_new_tokens, pad_token_id=pad_token_id,
                 eot_token_id=eot_token_id, include_input=include_input, temperature=temperature, return_logits=return_logits)
+            if return_logits:
+                decoded_ids_, logits_ = res
+                logits.append(logits_)
+            else:
+                decoded_ids_ = res
             decoded_ids.append(decoded_ids_[0])
+
 
         decoded_ids_padded = torch.ones((len(decoded_ids), max([len(x) for x in decoded_ids])),
                                         dtype=torch.long, device=x.device)
@@ -202,7 +209,12 @@ class DecoderTransformer(_Transformer):
         for i in range(len(decoded_ids)):
             decoded_ids_padded[i, :len(decoded_ids[i])] = decoded_ids[i]
         decoded_ids = decoded_ids_padded
-        return decoded_ids
+
+        if return_logits:
+            logits = torch.concatenate(logits)
+            return decoded_ids, logits
+        else:
+            return decoded_ids
 
     @torch.no_grad()
     def _generate_single(
