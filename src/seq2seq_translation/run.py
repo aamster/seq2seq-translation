@@ -361,6 +361,7 @@ def main(config: RNNConfig | TransformerConfig):
         logger.info(f'Model num params: {model.num_params / 1e6}M')
 
         if config.compile:
+            logger.info('compiling model')
             model = torch.compile(model)
 
         if config.use_ddp:

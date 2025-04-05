@@ -16,7 +16,7 @@ from seq2seq_translation.tokenization.sentencepiece_tokenizer import (
 )
 from loguru import logger
 
-from seq2seq_translation.utils.model_util import model_isinstance
+from seq2seq_translation.utils.model_util import model_isinstance, unwrap_model
 
 
 class SequenceGenerator(abc.ABC):
@@ -152,7 +152,7 @@ class BeamSearchSequenceGenerator(SequenceGenerator):
                                 )
                             )
                     elif model_isinstance(self._model, DecoderTransformer):
-                        _, logits  = self._model.generate(
+                        _, logits  = unwrap_model(self._model).generate(
                             x=decoder_input,
                             eot_token_id=self._tokenizer.eot_idx,
                             pad_token_id=self._tokenizer.pad_idx,

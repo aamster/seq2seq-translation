@@ -10,7 +10,6 @@ import torch
 import wandb
 from tiktoken import Encoding
 import torch.nn.functional as F
-from torch.nn.parallel import DistributedDataParallel
 from torch.utils.data import (
     DataLoader,
     DistributedSampler,
@@ -35,7 +34,7 @@ from seq2seq_translation.models.rnn import (
     EncoderDecoderRNN,
 )
 from seq2seq_translation.utils.ddp_utils import is_master_process
-from seq2seq_translation.utils.model_util import model_isinstance
+from seq2seq_translation.utils.model_util import model_isinstance, unwrap_model
 
 
 @dataclass
@@ -45,12 +44,6 @@ class LearningRateDecayConfig:
     warmup_iters: int = 2000
     min_lr: float = 5e-5  # should be ~= learning_rate/10 per Chinchilla
 
-
-def _unwrap_model(m):
-    """Unwrap any DDP or OptimizedModule wrappers to get the original model."""
-    if isinstance(m, DistributedDataParallel):
-        m = m.module
-    return m
 
 def _compute_loss(
     logits: torch.tensor,
@@ -632,7 +625,7 @@ def inference(
                     f'unknown model type {type(model_isinstance(m=model))}')
 
         if do_test_time_inference:
-            decoded_ids = _unwrap_model(m=model).generate(
+            decoded_ids = unwrap_model(m=model).generate(
                 x=input_tensor, top_k=1,
                 max_new_tokens=max_new_tokens, pad_token_id=pad_token_id,
                 eot_token_id=eot_token_id)
