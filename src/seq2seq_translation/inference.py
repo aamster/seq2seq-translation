@@ -16,6 +16,9 @@ from seq2seq_translation.tokenization.sentencepiece_tokenizer import (
 )
 from loguru import logger
 
+from seq2seq_translation.utils.model_util import model_isinstance
+
+
 class SequenceGenerator(abc.ABC):
     def __init__(
         self,
@@ -75,7 +78,7 @@ class BeamSearchSequenceGenerator(SequenceGenerator):
         logger.trace(f'input: {self._tokenizer.decode(input_tensor)}')
         src_tensor = input_tensor.unsqueeze(0)
 
-        if isinstance(self._model, (EncoderDecoderRNN, EncoderDecoderTransformer)):
+        if model_isinstance(self._model, (EncoderDecoderRNN, EncoderDecoderTransformer)):
             encoder_outputs, encoder_hidden = self._model.encoder(
                 src_tensor, input_lengths=input_lengths
             )
@@ -125,8 +128,8 @@ class BeamSearchSequenceGenerator(SequenceGenerator):
                 if len(decoded_sequence) > 0 and decoded_sequence[:, -1].item() == self._tokenizer.processor.eos_id():
                     continue
                 with torch.no_grad():
-                    if isinstance(self._model, EncoderDecoderRNN):
-                        if isinstance(self._model.decoder, AttnDecoderRNN):
+                    if model_isinstance(self._model, EncoderDecoderRNN):
+                        if model_isinstance(self._model.decoder, AttnDecoderRNN):
                             topk_indices, topk_scores, _, _, new_decoder_hidden = (
                                 self._model.decoder.decode_step(
                                     decoder_input=decoder_input,
@@ -137,7 +140,7 @@ class BeamSearchSequenceGenerator(SequenceGenerator):
                                     softmax_scores=True,
                                 )
                             )
-                        elif isinstance(self._model.decoder, DecoderRNN):
+                        elif model_isinstance(self._model.decoder, DecoderRNN):
                             topk_indices, topk_scores, _, new_decoder_hidden = (
                                 self._model.decoder.decode_step(
                                     decoder_input=decoder_input,
@@ -148,7 +151,7 @@ class BeamSearchSequenceGenerator(SequenceGenerator):
                                     softmax_scores=True,
                                 )
                             )
-                    elif isinstance(self._model, DecoderTransformer):
+                    elif model_isinstance(self._model, DecoderTransformer):
                         _, logits  = self._model.generate(
                             x=decoder_input,
                             eot_token_id=self._tokenizer.eot_idx,
@@ -179,9 +182,9 @@ class BeamSearchSequenceGenerator(SequenceGenerator):
                         [decoded_sequence, next_token_id], dim=1
                     )
                     new_score = score + torch.log(topk_scores[:, :, k]).item()
-                    if isinstance(self._model, EncoderDecoderRNN):
+                    if model_isinstance(self._model, EncoderDecoderRNN):
                         new_decoder_input = next_token_id
-                    elif isinstance(self._model, DecoderTransformer):
+                    elif model_isinstance(self._model, DecoderTransformer):
                         new_decoder_input = torch.cat((decoder_input, next_token_id), dim=1)
                     else:
                         raise NotImplementedError

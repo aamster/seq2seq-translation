@@ -34,7 +34,8 @@ from seq2seq_translation.tokenization.sentencepiece_tokenizer import (
 from seq2seq_translation.models.rnn import (
     EncoderDecoderRNN,
 )
-from seq2seq_translation.utils.ddp_utils import is_master_process, get_world_size
+from seq2seq_translation.utils.ddp_utils import is_master_process
+from seq2seq_translation.utils.model_util import model_isinstance
 
 
 @dataclass
@@ -44,18 +45,6 @@ class LearningRateDecayConfig:
     warmup_iters: int = 2000
     min_lr: float = 5e-5  # should be ~= learning_rate/10 per Chinchilla
 
-
-def _model_isinstance(m, type):
-    """Unwrap any DDP or OptimizedModule wrappers to get the original model."""
-    # Unwrap DDP
-    if isinstance(m, DistributedDataParallel):
-        m = m.module
-
-    # Unwrap torch.compile() wrapper
-    if isinstance(m, torch._dynamo.eval_frame.OptimizedModule):
-        m = m._orig_mod
-
-    return isinstance(m, type)
 
 def _unwrap_model(m):
     """Unwrap any DDP or OptimizedModule wrappers to get the original model."""
@@ -334,7 +323,7 @@ def estimate_performance_metrics(
                 eot_token_id=val_loader.dataset.eot_token_id
             )
 
-            if _model_isinstance(m=model, type=EncoderDecoderTransformer):
+            if model_isinstance(m=model, type=EncoderDecoderTransformer):
                 if loss_type != LossType.CROSS_ENTROPY:
                     logger.warning(f'Setting to {LossType.CROSS_ENTROPY}')
             loss = _compute_loss(
@@ -519,9 +508,9 @@ def train_epoch(
                     x=input_tensor, input_lengths=input_lengths, target_tensor=target_tensor
                 )
             else:
-                if _model_isinstance(m=model, type=EncoderDecoderTransformer):
+                if model_isinstance(m=model, type=EncoderDecoderTransformer):
                     logits = model(x=input_tensor, targets=target_tensor)
-                elif _model_isinstance(m=model, type=DecoderTransformer):
+                elif model_isinstance(m=model, type=DecoderTransformer):
                     tgt_key_padding_mask = (combined_tensor != val_data_loader.dataset.pad_token_id).bool()
                     logits = model(x=combined_tensor, tgt_key_padding_mask=tgt_key_padding_mask)
                 else:
@@ -530,7 +519,7 @@ def train_epoch(
             if combined_target_tensor is not None:
                 target_tensor = combined_target_tensor
 
-            if _model_isinstance(m=model, type=EncoderDecoderTransformer):
+            if model_isinstance(m=model, type=EncoderDecoderTransformer):
                 if loss_type != LossType.CROSS_ENTROPY:
                     logger.warning(f'Setting to {LossType.CROSS_ENTROPY}')
 
@@ -633,14 +622,14 @@ def inference(
         if get_input_logits:
             # get logits, decoded_ids using target as "teacher"
             # easier/quicker than test-time inference, since already have the target sequence
-            if _model_isinstance(m=model, type=EncoderDecoderTransformer):
+            if model_isinstance(m=model, type=EncoderDecoderTransformer):
                 logits = model(x=input_tensor, targets=target_tensor)
-            elif _model_isinstance(m=model, type=DecoderTransformer):
+            elif model_isinstance(m=model, type=DecoderTransformer):
                 tgt_key_padding_mask = (combined_tensor != pad_token_id).bool()
                 logits = model(x=combined_tensor, tgt_key_padding_mask=tgt_key_padding_mask)
             else:
                 raise ValueError(
-                    f'unknown model type {type(_model_isinstance(m=model))}')
+                    f'unknown model type {type(model_isinstance(m=model))}')
 
         if do_test_time_inference:
             decoded_ids = _unwrap_model(m=model).generate(
