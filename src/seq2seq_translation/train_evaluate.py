@@ -690,7 +690,7 @@ def evaluate(
             except ZeroDivisionError:
                 bleu_score = 0
             bleu_scores.append(bleu_score)
-            input_lengths.append(batch_input_lengths)
+            input_lengths.append(batch_input_lengths[i])
             decoded_sentences.append(pred)
             targets.append(target)
             idx += 1
