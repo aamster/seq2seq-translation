@@ -20,8 +20,4 @@ def unwrap_model(m):
     if isinstance(m, DistributedDataParallel):
         m = m.module
 
-    # Unwrap torch.compile() wrapper
-    if isinstance(m, torch._dynamo.eval_frame.OptimizedModule):
-        m = m._orig_mod
-
     return m
