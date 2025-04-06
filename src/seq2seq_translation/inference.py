@@ -1,4 +1,5 @@
 import abc
+import os
 import sys
 
 import torch
@@ -21,7 +22,7 @@ from seq2seq_translation.utils.model_util import model_isinstance
 
 logger.remove()
 
-logger.add(sys.stderr, level="TRACE")
+logger.add(sys.stderr, level=os.environ['LOG_LEVEL'])
 
 
 class SequenceGenerator(abc.ABC):
