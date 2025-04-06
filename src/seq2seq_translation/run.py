@@ -190,7 +190,9 @@ def main(config: RNNConfig | TransformerConfig):
                 combine_source_and_target=config.decoder_only,
                 max_length=None,
                 eos_token_id=eot_token_id,
-                pad_token_id=tokenizer.pad_idx
+                pad_token_id=tokenizer.pad_idx,
+                source_language_tag_token_id=tokenizer.language_tag_map[config.source_lang],
+                target_language_tag_token_id=tokenizer.language_tag_map[config.target_lang],
             )
             test_data_loader = DataLoader(
                 dataset=test_dset,

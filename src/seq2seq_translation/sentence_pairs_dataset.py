@@ -43,7 +43,7 @@ class SentencePairsDatasetFromPreprocessedTokens(Dataset):
     @property
     def pad_token_id(self) -> int:
         return self._pad_token_id
-    
+
     @property
     def eot_token_id(self) -> int:
         return self._eot_token_id
@@ -84,6 +84,8 @@ class SentencePairsDataset(Dataset):
         pad_token_id: int,
         combined_tokenizer: SentencePieceTokenizer | Encoding,
         combine_source_and_target: bool = False,
+        source_language_tag_token_id: Optional[int] = None,
+        target_language_tag_token_id: Optional[int] = None,
         max_length: int = None,
     ):
         """
@@ -101,6 +103,8 @@ class SentencePairsDataset(Dataset):
         self._combined_tokenizer = combined_tokenizer
         self._max_length = max_length
         self._combine_source_and_target = combine_source_and_target
+        self._source_language_tag_token_id = source_language_tag_token_id
+        self._target_language_tag_token_id = target_language_tag_token_id
         self._transform = self._get_transform(max_len=max_length)
         self._eos_token_id = eos_token_id
         self._pad_token_id = pad_token_id
@@ -119,8 +123,15 @@ class SentencePairsDataset(Dataset):
             source_ids = self._combined_tokenizer.encode_ordinary(source)
             target_ids = self._combined_tokenizer.encode_ordinary(target)
 
-        source = self._transform(source_ids)
-        target = self._transform(target_ids)
+        if self._combine_source_and_target:
+            if self._source_language_tag_token_id is None or self._target_language_tag_token_id is None:
+                raise ValueError('must provide token tags')
+            # adding a language tag to denote start of language text per "Language models are good translators", Wang et al
+            source = torch.concatenate([torch.tensor([self._source_language_tag_token_id]), self._transform(source_ids)])
+            target = torch.concatenate([torch.tensor([self._target_language_tag_token_id]), self._transform(target_ids)])
+        else:
+            source = self._transform(source_ids)
+            target = self._transform(target_ids)
 
         if self._combine_source_and_target:
             combined = torch.cat([source, target])
