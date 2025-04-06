@@ -247,7 +247,6 @@ def main(config: RNNConfig | TransformerConfig):
         if config.use_ddp:
             device = f"{device}:{distributed_context.ddp_local_rank}"
         os.environ["DEVICE"] = device
-        os.environ['LOG_LEVEL'] = config.log_level
 
         device = torch.device(device)
 
