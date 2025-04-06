@@ -22,7 +22,7 @@ from seq2seq_translation.utils.model_util import model_isinstance
 
 logger.remove()
 
-logger.add(sys.stderr, level=os.environ['LOG_LEVEL'])
+logger.add(sys.stderr, level=os.environ.get('LOG_LEVEL', 'INFO'))
 
 
 class SequenceGenerator(abc.ABC):

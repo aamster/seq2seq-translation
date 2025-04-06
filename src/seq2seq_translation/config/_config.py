@@ -60,7 +60,6 @@ class Config(BaseModel):
     decoder_only: bool = False
     loss_type: LossType = LossType.AUTOENCODE_TRANSLATION
     dtype: str = 'float16'
-    log_level: str = 'INFO'
 
     class Config:
         extra = "forbid"
