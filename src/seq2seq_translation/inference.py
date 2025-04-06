@@ -1,4 +1,5 @@
 import abc
+import sys
 
 import torch
 import torch.nn.functional as F
@@ -9,14 +10,18 @@ from seq2seq_translation.models.rnn import (
     AttnDecoderRNN,
     EncoderDecoderRNN,
 )
-from seq2seq_translation.models.transformer.decoder import DecoderTransformer
+from seq2seq_translation.models.transformer.decoder import DecoderTransformer, generate
 from seq2seq_translation.models.transformer.encoder_decoder import EncoderDecoderTransformer
 from seq2seq_translation.tokenization.sentencepiece_tokenizer import (
     SentencePieceTokenizer,
 )
 from loguru import logger
 
-from seq2seq_translation.utils.model_util import model_isinstance, unwrap_model
+from seq2seq_translation.utils.model_util import model_isinstance
+
+logger.remove()
+
+logger.add(sys.stderr, level="TRACE")
 
 
 class SequenceGenerator(abc.ABC):
@@ -152,7 +157,8 @@ class BeamSearchSequenceGenerator(SequenceGenerator):
                                 )
                             )
                     elif model_isinstance(self._model, DecoderTransformer):
-                        _, logits  = unwrap_model(self._model).generate(
+                        _, logits  = generate(
+                            model=self._model,
                             x=decoder_input,
                             eot_token_id=self._tokenizer.eot_idx,
                             pad_token_id=self._tokenizer.pad_idx,

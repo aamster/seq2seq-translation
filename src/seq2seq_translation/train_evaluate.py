@@ -24,7 +24,7 @@ import evaluate as huggingface_evaluate
 
 from seq2seq_translation.config._config import LossType
 from seq2seq_translation.inference import SequenceGenerator, BeamSearchSequenceGenerator
-from seq2seq_translation.models.transformer.decoder import DecoderTransformer
+from seq2seq_translation.models.transformer.decoder import DecoderTransformer, generate as generate_decoder_transformer
 from seq2seq_translation.models.transformer.encoder_decoder import EncoderDecoderTransformer
 from seq2seq_translation.sentence_pairs_dataset import SentencePairsDatasetFromPreprocessedTokens
 from seq2seq_translation.tokenization.sentencepiece_tokenizer import (
@@ -625,10 +625,14 @@ def inference(
                     f'unknown model type {type(model_isinstance(m=model))}')
 
         if do_test_time_inference:
-            decoded_ids = unwrap_model(m=model).generate(
-                x=input_tensor, top_k=1,
-                max_new_tokens=max_new_tokens, pad_token_id=pad_token_id,
-                eot_token_id=eot_token_id)
+            if model_isinstance(model, DecoderTransformer):
+                decoded_ids = generate_decoder_transformer(
+                    model=model,
+                    x=input_tensor, top_k=1,
+                    max_new_tokens=max_new_tokens, pad_token_id=pad_token_id,
+                    eot_token_id=eot_token_id)
+            else:
+                raise NotImplementedError
         else:
             if get_input_logits:
                 probs = F.softmax(logits, dim=-1)
