@@ -22,7 +22,8 @@ from seq2seq_translation.utils.model_util import model_isinstance
 
 logger.remove()
 
-logger.add(sys.stderr, level=os.environ.get('LOG_LEVEL', 'INFO'))
+LOG_LEVEL = os.environ.get('LOG_LEVEL', 'INFO')
+logger.add(sys.stderr, level=LOG_LEVEL)
 
 
 class SequenceGenerator(abc.ABC):
@@ -81,7 +82,8 @@ class BeamSearchSequenceGenerator(SequenceGenerator):
         self.max_length = max_length
 
     def generate(self, input_tensor: torch.tensor, input_lengths: list[int]):
-        logger.trace(f'input: {self._tokenizer.decode(input_tensor)}')
+        if LOG_LEVEL == 'TRACE':
+            logger.trace(f'input: {self._tokenizer.decode(input_tensor)}')
         src_tensor = input_tensor.unsqueeze(0)
 
         if model_isinstance(self._model, (EncoderDecoderRNN, EncoderDecoderTransformer)):
@@ -215,11 +217,12 @@ class BeamSearchSequenceGenerator(SequenceGenerator):
                         )
             logger.trace("\nNew beams:")
             for new_beam in new_beams:
-                logger.trace(
-                    " ".join(
-                        [self._tokenizer.decode(new_beam['decoded_sequence']), f"{new_beam['score']:.3f}"]
+                if LOG_LEVEL == 'TRACE':
+                    logger.trace(
+                        " ".join(
+                            [self._tokenizer.decode(new_beam['decoded_sequence']), f"{new_beam['score']:.3f}"]
+                        )
                     )
-                )
 
             # Sort new beams by score and select top k
             beams = sorted(new_beams, key=lambda x: x['score'], reverse=True)[
@@ -228,21 +231,23 @@ class BeamSearchSequenceGenerator(SequenceGenerator):
 
             logger.trace("\nBeams:")
             for beam in beams:
-                logger.trace(
-                    " ".join([self._tokenizer.decode(beam['decoded_sequence']), f"{beam['score']:.3f}"])
-                )
+                if LOG_LEVEL == 'TRACE':
+                    logger.trace(
+                        " ".join([self._tokenizer.decode(beam['decoded_sequence']), f"{beam['score']:.3f}"])
+                    )
 
             if all_candidates:
                 logger.trace(f"\ncompleted\n\n")
                 for completed in all_candidates:
-                    logger.trace(
-                        " ".join(
-                            [
-                                self._tokenizer.decode(completed['decoded_sequence']),
-                                f"{completed['score']:.3f}",
-                            ]
+                    if LOG_LEVEL == 'TRACE':
+                        logger.trace(
+                            " ".join(
+                                [
+                                    self._tokenizer.decode(completed['decoded_sequence']),
+                                    f"{completed['score']:.3f}",
+                                ]
+                            )
                         )
-                    )
         # Combine the remaining beams with all_candidates
         all_candidates.extend(beams)
 
