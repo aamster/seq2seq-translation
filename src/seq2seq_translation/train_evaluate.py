@@ -1,5 +1,6 @@
 import math
 import os
+import sys
 import time
 from contextlib import nullcontext
 from dataclasses import dataclass
@@ -24,7 +25,7 @@ import evaluate as huggingface_evaluate
 
 from seq2seq_translation.config._config import LossType
 from seq2seq_translation.inference import SequenceGenerator, BeamSearchSequenceGenerator
-from seq2seq_translation.models.transformer.decoder import DecoderTransformer, generate as generate_decoder_transformer
+from seq2seq_translation.models.transformer.decoder import DecoderTransformer
 from seq2seq_translation.models.transformer.encoder_decoder import EncoderDecoderTransformer
 from seq2seq_translation.sentence_pairs_dataset import SentencePairsDatasetFromPreprocessedTokens
 from seq2seq_translation.tokenization.sentencepiece_tokenizer import (
@@ -36,6 +37,10 @@ from seq2seq_translation.models.rnn import (
 from seq2seq_translation.utils.ddp_utils import is_master_process
 from seq2seq_translation.utils.model_util import model_isinstance, unwrap_model
 
+logger.remove()
+
+LOG_LEVEL = os.environ.get('LOG_LEVEL', 'INFO')
+logger.add(sys.stderr, level=LOG_LEVEL)
 
 @dataclass
 class LearningRateDecayConfig:
@@ -626,8 +631,7 @@ def inference(
 
         if do_test_time_inference:
             if model_isinstance(model, DecoderTransformer):
-                decoded_ids = generate_decoder_transformer(
-                    model=model,
+                decoded_ids = model.generate(
                     x=input_tensor, top_k=1,
                     max_new_tokens=max_new_tokens, pad_token_id=pad_token_id,
                     eot_token_id=eot_token_id)
@@ -649,6 +653,7 @@ def evaluate(
     model: EncoderDecoderRNN | EncoderDecoderTransformer | DecoderTransformer,
     data_loader: DataLoader,
     tokenizer: SentencePieceTokenizer,
+    source_tokenizer: Optional[SentencePieceTokenizer] = None,
     sequence_generator_type: Type[SequenceGenerator] = BeamSearchSequenceGenerator,
 ):
     model.eval()
@@ -675,6 +680,12 @@ def evaluate(
             tokenizer=tokenizer,
         )
         for i in range(len(input_tensor)):
+            if LOG_LEVEL == 'TRACE':
+                if model_isinstance(model,
+                                    EncoderDecoderTransformer) and source_tokenizer is None:
+                    raise ValueError('provide source tokenizer if EncoderDecoderTransformer')
+                logger.trace(f'input: {source_tokenizer.decode(input_tensor)}')
+
             pred = sequence_generator.generate(
                 input_tensor=input_tensor[i], input_lengths=[batch_input_lengths[i]]
             )

@@ -158,6 +158,134 @@ class DecoderTransformer(_Transformer):
         logits = self.lm_head(x)
         return logits
 
+    @torch.no_grad()
+    def generate(
+            self,
+            x: torch.tensor,
+            eot_token_id: int,
+            pad_token_id: int,
+            include_input: bool = False,
+            temperature: float = 1.0,
+            top_k: Optional[int] = None,
+            max_new_tokens: Optional[int] = None,
+            return_logits: bool = False
+    ):
+        """
+        Generates next token predictions for `max_new_tokens` timesteps for a set of examples
+
+        :param x: expects batch dimension to be 1st
+        :param eot_token_id:
+        :param pad_token_id:
+        :param include_input:
+        :param temperature:
+        :param top_k:
+        :param max_new_tokens:
+        :param return_logits:
+        :return:
+        """
+        decoded_ids = []
+        logits = []
+        for example in x:
+            # exclude padding
+            example = example[example != pad_token_id]
+            # place batch dim 1st
+            example = example.unsqueeze(0)
+
+            res = self._generate_single(
+                x=example, top_k=top_k,
+                max_new_tokens=max_new_tokens, pad_token_id=pad_token_id,
+                eot_token_id=eot_token_id, include_input=include_input, temperature=temperature,
+                return_logits=return_logits)
+            if return_logits:
+                decoded_ids_, logits_ = res
+                logits.append(logits_)
+            else:
+                decoded_ids_ = res
+            decoded_ids.append(decoded_ids_[0])
+
+        decoded_ids_padded = torch.ones((len(decoded_ids), max([len(x) for x in decoded_ids])),
+                                        dtype=torch.long, device=x.device)
+        decoded_ids_padded[:] = pad_token_id
+        for i in range(len(decoded_ids)):
+            decoded_ids_padded[i, :len(decoded_ids[i])] = decoded_ids[i]
+        decoded_ids = decoded_ids_padded
+
+        if return_logits:
+            logits = torch.concatenate(logits)
+            return decoded_ids, logits
+        else:
+            return decoded_ids
+
+    @torch.no_grad()
+    def _generate_single(
+            self,
+            x: torch.tensor,
+            eot_token_id: int,
+            pad_token_id: int,
+            include_input: bool = False,
+            temperature: float = 1.0,
+            top_k: Optional[int] = None,
+            max_new_tokens: Optional[int] = None,
+            return_logits: bool = False
+    ):
+        """
+        Generates next token predictions for `max_new_tokens` timesteps for a single example
+
+        This could handle multiple examples but to pass multiple examples we need to pad, but
+        in the training data, we padded after concatenating source+target, and so the model made
+        mistakes because it never saw padded source
+
+        :param x: expected to be batch size of 1
+        :param eot_token_id:
+        :param pad_token_id:
+        :param include_input:
+        :param temperature:
+        :param top_k:
+        :param max_new_tokens:
+        :param return_logits:
+        :return:
+        """
+        if include_input:
+            generated_tokens = torch.tensor(x, dtype=torch.long).to(x.device)
+        else:
+            generated_tokens = torch.tensor([], dtype=torch.long).to(x.device)
+
+        context = x
+
+        input_len = x.shape[1]
+        if max_new_tokens is None:
+            max_new_tokens = input_len + 50  # from "Attention is all you need"
+
+        all_logits = []
+        for i in range(max_new_tokens):
+            # forward the model to get the logits for the index in the sequence
+            key_padding_mask = (context != pad_token_id).bool()
+            logits = self(
+                x=context,
+                tgt_key_padding_mask=key_padding_mask
+            )
+            # pluck the logits at the final step and scale by desired temperature
+            logits = logits[:, -1, :] / temperature
+            # optionally crop the logits to only the top k options
+            if top_k is not None:
+                v, _ = torch.topk(logits, min(top_k, logits.size(-1)))
+                logits[logits < v[:, [-1]]] = -float("Inf")
+            all_logits.append(logits)
+            # apply softmax to convert logits to (normalized) probabilities
+            probs = F.softmax(logits, dim=-1)
+            # sample from the distribution
+            next_token = torch.multinomial(probs, num_samples=1)
+            # append sampled index to the running sequence and continue
+            generated_tokens = torch.cat((generated_tokens, next_token), dim=1)
+            context = torch.cat([context, next_token], dim=1)
+            # Stop if all sequences in the batch generated <eos>
+            if (next_token == eot_token_id).all():
+                break
+        if return_logits:
+            return generated_tokens, torch.cat(all_logits, dim=1)
+        else:
+            return generated_tokens
+
     @property
     def num_params(self, non_embedding: bool = True):
         """
@@ -304,133 +432,3 @@ def create_pretrained_to_new_mapping(pretrained_keys: list) -> dict:
         new_key = map_key(key)
         mapping[key] = new_key
     return mapping
-
-
-@torch.no_grad()
-def generate(
-    model: DecoderTransformer,
-    x: torch.tensor,
-    eot_token_id: int,
-    pad_token_id: int,
-    include_input: bool = False,
-    temperature: float = 1.0,
-    top_k: Optional[int] = None,
-    max_new_tokens: Optional[int] = None,
-    return_logits: bool = False
-):
-    """
-    Generates next token predictions for `max_new_tokens` timesteps for a set of examples
-
-    :param x: expects batch dimension to be 1st
-    :param eot_token_id:
-    :param pad_token_id:
-    :param include_input:
-    :param temperature:
-    :param top_k:
-    :param max_new_tokens:
-    :param return_logits:
-    :return:
-    """
-    decoded_ids = []
-    logits = []
-    for example in x:
-        # exclude padding
-        example = example[example != pad_token_id]
-        # place batch dim 1st
-        example = example.unsqueeze(0)
-
-        res = _generate_single(
-            model=model,
-            x=example, top_k=top_k,
-            max_new_tokens=max_new_tokens, pad_token_id=pad_token_id,
-            eot_token_id=eot_token_id, include_input=include_input, temperature=temperature, return_logits=return_logits)
-        if return_logits:
-            decoded_ids_, logits_ = res
-            logits.append(logits_)
-        else:
-            decoded_ids_ = res
-        decoded_ids.append(decoded_ids_[0])
-
-
-    decoded_ids_padded = torch.ones((len(decoded_ids), max([len(x) for x in decoded_ids])),
-                                    dtype=torch.long, device=x.device)
-    decoded_ids_padded[:] = pad_token_id
-    for i in range(len(decoded_ids)):
-        decoded_ids_padded[i, :len(decoded_ids[i])] = decoded_ids[i]
-    decoded_ids = decoded_ids_padded
-
-    if return_logits:
-        logits = torch.concatenate(logits)
-        return decoded_ids, logits
-    else:
-        return decoded_ids
-
-@torch.no_grad()
-def _generate_single(
-    model: DecoderTransformer,
-    x: torch.tensor,
-    eot_token_id: int,
-    pad_token_id: int,
-    include_input: bool = False,
-    temperature: float = 1.0,
-    top_k: Optional[int] = None,
-    max_new_tokens: Optional[int] = None,
-    return_logits: bool = False
-):
-    """
-    Generates next token predictions for `max_new_tokens` timesteps for a single example
-
-    This could handle multiple examples but to pass multiple examples we need to pad, but
-    in the training data, we padded after concatenating source+target, and so the model made
-    mistakes because it never saw padded source
-
-    :param x: expected to be batch size of 1
-    :param eot_token_id:
-    :param pad_token_id:
-    :param include_input:
-    :param temperature:
-    :param top_k:
-    :param max_new_tokens:
-    :param return_logits:
-    :return:
-    """
-    if include_input:
-        generated_tokens = torch.tensor(x, dtype=torch.long).to(x.device)
-    else:
-        generated_tokens = torch.tensor([], dtype=torch.long).to(x.device)
-
-    context = x
-
-    input_len = x.shape[1]
-    if max_new_tokens is None:
-        max_new_tokens = input_len + 50 # from "Attention is all you need"
-
-    all_logits = []
-    for i in range(max_new_tokens):
-        # forward the model to get the logits for the index in the sequence
-        key_padding_mask = (context != pad_token_id).bool()
-        logits = model(
-            x=context,
-            tgt_key_padding_mask=key_padding_mask
-        )
-        # pluck the logits at the final step and scale by desired temperature
-        logits = logits[:, -1, :] / temperature
-        # optionally crop the logits to only the top k options
-        if top_k is not None:
-            v, _ = torch.topk(logits, min(top_k, logits.size(-1)))
-            logits[logits < v[:, [-1]]] = -float("Inf")
-        all_logits.append(logits)
-        # apply softmax to convert logits to (normalized) probabilities
-        probs = F.softmax(logits, dim=-1)
-        # sample from the distribution
-        next_token = torch.multinomial(probs, num_samples=1)
-        # append sampled index to the running sequence and continue
-        generated_tokens = torch.cat((generated_tokens, next_token), dim=1)
-        context = torch.cat([context, next_token], dim=1)
-        # Stop if all sequences in the batch generated <eos>
-        if (next_token == eot_token_id).all():
-            break
-    if return_logits:
-        return generated_tokens, torch.cat(all_logits, dim=1)
-    else:
-        return generated_tokens

@@ -46,10 +46,8 @@ from seq2seq_translation.utils.ddp_utils import (
 from torch.nn.parallel import DistributedDataParallel as DDP
 
 
-def _remove_module_from_state_dict(state_dict: dict):
+def _fix_model_state_dict(state_dict: dict):
     """
-    fixing an issue. when training with ddp should have saved model.module.state_dict() instead of model.state_dict()
-    removing "module" from keys
     :param state_dict:
     :return:
     """
@@ -58,6 +56,8 @@ def _remove_module_from_state_dict(state_dict: dict):
     for k, v in state_dict.items():
         name = k.replace("module.", "")  # remove `module.` prefix
         name = name.replace('_orig_mod.', "")
+
+        name = name.replace("positional_encoding", "positional_embedding")  # seems this has been renamed
         new_state_dict[name] = v
     return new_state_dict
 
@@ -146,7 +146,8 @@ def main(config: RNNConfig | TransformerConfig):
         if config.decoder_only:
             if config.tokenizer_type == TokenizerType.SENTENCEPIECE:
                 tokenizer = SentencePieceTokenizer(
-                    model_prefix=str(Path(config.sentence_piece_model_dir) / Path(config.sentence_piece_model_dir).name)
+                    model_prefix=str(Path(config.sentence_piece_model_dir) / Path(config.sentence_piece_model_dir).name),
+                    include_language_tag=config.include_language_tag
                 )
                 eot_token_id = tokenizer.processor.eos_id()
                 logger.info(f'{tokenizer.processor.vocab_size()} tokens')
@@ -157,12 +158,29 @@ def main(config: RNNConfig | TransformerConfig):
 
         else:
             if config.tokenizer_type == TokenizerType.SENTENCEPIECE:
-                tokenizer = SentencePieceTokenizer(
-                    model_prefix=str(Path(config.sentence_piece_model_dir) / Path(config.sentence_piece_model_dir).name)
-                )
+                if config.use_separate_tokenizer_for_source_target_lang:
+                    source_tokenizer = SentencePieceTokenizer(
+                        model_prefix=str(Path(config.sentence_piece_model_dir) / config.source_lang),
+                        include_language_tag=config.include_language_tag
+                    )
+                    target_tokenizer = SentencePieceTokenizer(
+                        model_prefix=str(Path(config.sentence_piece_model_dir) / config.target_lang),
+                        include_language_tag=config.include_language_tag
+                    )
+                    logger.info(f"source {source_tokenizer.processor.vocab_size()} vocab size")
+                    logger.info(f"target {target_tokenizer.processor.vocab_size()} vocab size")
+                    eot_token_id = source_tokenizer.processor.eos_id()
+                    tokenizer = None
+                else:
+                    tokenizer = SentencePieceTokenizer(
+                        model_prefix=str(Path(config.sentence_piece_model_dir) / Path(config.sentence_piece_model_dir).name),
+                        include_language_tag=config.include_language_tag
+                    )
+                    source_tokenizer = None
+                    target_tokenizer = None
+                    logger.info(f"{tokenizer.processor.vocab_size()} vocab size")
+                    eot_token_id = tokenizer.processor.eos_id()
 
-                eot_token_id = tokenizer.processor.eos_id()
-                logger.info(f"{tokenizer.processor.vocab_size()} vocab size")
             else:
                 tokenizer = TikTokenTokenizer()
                 eot_token_id = tokenizer.tokenizer.eot_token
@@ -186,20 +204,24 @@ def main(config: RNNConfig | TransformerConfig):
             test_dset = SentencePairsDataset(
                 datasets=test_datasets,
                 idxs=np.arange(len(test_datasets)),
+                source_tokenizer=source_tokenizer,
+                target_tokenizer=target_tokenizer,
                 combined_tokenizer=tokenizer,
                 combine_source_and_target=config.decoder_only,
                 max_length=None,
                 eos_token_id=eot_token_id,
-                pad_token_id=tokenizer.pad_idx,
-                source_language_tag_token_id=tokenizer.language_tag_map[config.source_lang],
-                target_language_tag_token_id=tokenizer.language_tag_map[config.target_lang],
+                pad_token_id=source_tokenizer.pad_idx if config.use_separate_tokenizer_for_source_target_lang else tokenizer.pad_idx,
+                source_language_tag_token_id=tokenizer.language_tag_map[config.source_lang] if config.include_language_tag else None,
+                target_language_tag_token_id=tokenizer.language_tag_map[config.target_lang] if config.include_language_tag else None,
+                add_bos_token=config.add_bos_token,
+                bos_token_id=source_tokenizer.processor.bos_id() if config.use_separate_tokenizer_for_source_target_lang else tokenizer.processor.bos_id()
             )
             test_data_loader = DataLoader(
                 dataset=test_dset,
                 shuffle=False,
                 sampler=DistributedSampler(test_dset) if config.use_ddp else None,
                 batch_size=config.batch_size,
-                collate_fn=CollateFunction(pad_token_id=tokenizer.pad_idx),
+                collate_fn=CollateFunction(pad_token_id=source_tokenizer.pad_idx if config.use_separate_tokenizer_for_source_target_lang else tokenizer.pad_idx),
             )
 
         else:
@@ -329,13 +351,13 @@ def main(config: RNNConfig | TransformerConfig):
                 model = EncoderDecoderTransformer(
                     n_attention_heads=config.n_head,
                     n_layers=config.num_layers,
-                    vocab_size=tokenizer.vocab_size,
+                    vocab_size=source_tokenizer.vocab_size if config.use_separate_tokenizer_for_source_target_lang else tokenizer.vocab_size,
                     d_model=config.d_model,
                     block_size=config.max_input_length,
                     feedforward_hidden_dim=config.feedforward_hidden_dim,
-                    sos_token_id=tokenizer.processor.bos_id(),
-                    eos_token_id=tokenizer.processor.eos_id(),
-                    pad_token_id=tokenizer.processor.pad_id(),
+                    sos_token_id=source_tokenizer.processor.bos_id() if config.use_separate_tokenizer_for_source_target_lang else tokenizer.processor.bos_id(),
+                    eos_token_id=source_tokenizer.processor.eos_id() if config.use_separate_tokenizer_for_source_target_lang else tokenizer.processor.eos_id(),
+                    pad_token_id=source_tokenizer.processor.pad_id() if config.use_separate_tokenizer_for_source_target_lang else tokenizer.processor.pad_id(),
                     norm_first=config.norm_first,
                     mlp_activation=config.activation,
                     positional_encoding_type=config.positional_encoding_type,
@@ -355,7 +377,7 @@ def main(config: RNNConfig | TransformerConfig):
                 model.load_state_dict(checkpoint["model"])
             except RuntimeError:
                 model.load_state_dict(
-                    _remove_module_from_state_dict(checkpoint["model"])
+                    _fix_model_state_dict(checkpoint["model"])
                 )
 
             optimizer.load_state_dict(checkpoint["optimizer"])
@@ -388,7 +410,8 @@ def main(config: RNNConfig | TransformerConfig):
                         data_loader=(
                             test_data_loader if config.is_test else val_data_loader
                         ),
-                        tokenizer=tokenizer,
+                        tokenizer=target_tokenizer if config.use_separate_tokenizer_for_source_target_lang else tokenizer,
+                        source_tokenizer=source_tokenizer,
                         sequence_generator_type=(
                             BeamSearchSequenceGenerator
                             if config.eval_sequence_generator_type == "beam search"

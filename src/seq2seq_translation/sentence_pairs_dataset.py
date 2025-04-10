@@ -82,11 +82,15 @@ class SentencePairsDataset(Dataset):
         idxs: np.ndarray,
         eos_token_id: int,
         pad_token_id: int,
-        combined_tokenizer: SentencePieceTokenizer | Encoding,
+        source_tokenizer: Optional[SentencePieceTokenizer] = None,
+        target_tokenizer: Optional[SentencePieceTokenizer] = None,
+        combined_tokenizer: Optional[SentencePieceTokenizer | Encoding] = None,
         combine_source_and_target: bool = False,
         source_language_tag_token_id: Optional[int] = None,
         target_language_tag_token_id: Optional[int] = None,
         max_length: int = None,
+        add_bos_token: bool = False,
+        bos_token_id: Optional[int] = None
     ):
         """
 
@@ -96,10 +100,19 @@ class SentencePairsDataset(Dataset):
         :param combine_source_and_target: Combine the source and target into a single input.
         :param max_length:
         :param eos_token_id
+        :param add_bos_token
         """
 
+        if source_tokenizer and target_tokenizer and combined_tokenizer:
+            raise ValueError('provide either source/target tokenizer or combined tokenizer')
+        if source_tokenizer is None and target_tokenizer is None and combined_tokenizer is None:
+            raise ValueError('provide source/target tokenizer or combined tokenizer')
+        if add_bos_token and bos_token_id is None:
+            raise ValueError('must provide bos_token_id if add_bos_token')
         self._datasets = datasets
         self._idxs = idxs
+        self._source_tokenizer = source_tokenizer
+        self._target_tokenizer = target_tokenizer
         self._combined_tokenizer = combined_tokenizer
         self._max_length = max_length
         self._combine_source_and_target = combine_source_and_target
@@ -108,6 +121,8 @@ class SentencePairsDataset(Dataset):
         self._transform = self._get_transform(max_len=max_length)
         self._eos_token_id = eos_token_id
         self._pad_token_id = pad_token_id
+        self._add_bos_token = add_bos_token
+        self._bos_token_id = bos_token_id
 
     def __len__(self):
         return len(self._idxs)
@@ -116,19 +131,22 @@ class SentencePairsDataset(Dataset):
         idx = self._idxs[idx]
         source, target, dataset_name = self._datasets[idx]
 
-        if isinstance(self._combined_tokenizer, SentencePieceTokenizer):
-            source_ids = self._combined_tokenizer.processor.encode(source)
-            target_ids = self._combined_tokenizer.processor.encode(target)
+        if self._combined_tokenizer is not None:
+            if isinstance(self._combined_tokenizer, SentencePieceTokenizer):
+                source_ids = self._combined_tokenizer.processor.encode(source)
+                target_ids = self._combined_tokenizer.processor.encode(target)
+            else:
+                source_ids = self._combined_tokenizer.encode_ordinary(source)
+                target_ids = self._combined_tokenizer.encode_ordinary(target)
         else:
-            source_ids = self._combined_tokenizer.encode_ordinary(source)
-            target_ids = self._combined_tokenizer.encode_ordinary(target)
+            source_ids = self._source_tokenizer.processor.encode(source)
+            target_ids = self._target_tokenizer.processor.encode(target)
 
         if self._combine_source_and_target:
-            if self._source_language_tag_token_id is None or self._target_language_tag_token_id is None:
-                raise ValueError('must provide token tags')
-            # adding a language tag to denote start of language text per "Language models are good translators", Wang et al
-            source = torch.concatenate([torch.tensor([self._source_language_tag_token_id]), self._transform(source_ids)])
-            target = torch.concatenate([torch.tensor([self._target_language_tag_token_id]), self._transform(target_ids)])
+            if self._source_language_tag_token_id is not None and self._target_language_tag_token_id is not None:
+                # adding a language tag to denote start of language text per "Language models are good translators", Wang et al
+                source = torch.concatenate([torch.tensor([self._source_language_tag_token_id]), self._transform(source_ids)])
+                target = torch.concatenate([torch.tensor([self._target_language_tag_token_id]), self._transform(target_ids)])
         else:
             source = self._transform(source_ids)
             target = self._transform(target_ids)
@@ -152,6 +170,8 @@ class SentencePairsDataset(Dataset):
                 x = x[:max_len]
 
             x.append(self._eos_token_id)
+            if self._add_bos_token:
+                x = [self._bos_token_id] + x
             x = torch.tensor(x)
             return x
 

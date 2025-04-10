@@ -1,6 +1,7 @@
 import abc
 import os
 import sys
+from typing import Optional
 
 import torch
 import torch.nn.functional as F
@@ -11,7 +12,7 @@ from seq2seq_translation.models.rnn import (
     AttnDecoderRNN,
     EncoderDecoderRNN,
 )
-from seq2seq_translation.models.transformer.decoder import DecoderTransformer, generate
+from seq2seq_translation.models.transformer.decoder import DecoderTransformer
 from seq2seq_translation.models.transformer.encoder_decoder import EncoderDecoderTransformer
 from seq2seq_translation.tokenization.sentencepiece_tokenizer import (
     SentencePieceTokenizer,
@@ -74,28 +75,38 @@ class BeamSearchSequenceGenerator(SequenceGenerator):
         self,
         model: EncoderDecoderRNN | EncoderDecoderTransformer,
         tokenizer: SentencePieceTokenizer,
+        source_tokenizer: Optional[SentencePieceTokenizer] = None,
         beam_width=4,
         max_length=72,
     ):
         super().__init__(model=model, tokenizer=tokenizer)
         self.beam_width = beam_width
         self.max_length = max_length
+        self._source_tokenizer = source_tokenizer
 
     def generate(self, input_tensor: torch.tensor, input_lengths: list[int]):
-        if LOG_LEVEL == 'TRACE':
-            logger.trace(f'input: {self._tokenizer.decode(input_tensor)}')
         src_tensor = input_tensor.unsqueeze(0)
 
         if model_isinstance(self._model, (EncoderDecoderRNN, EncoderDecoderTransformer)):
-            encoder_outputs, encoder_hidden = self._model.encoder(
-                src_tensor, input_lengths=input_lengths
-            )
-
-            initial_decoder_input, decoder_hidden, _ = (
-                self._model.decoder.initialize_forward(
-                    encoder_hidden=encoder_hidden
+            if model_isinstance(self._model, EncoderDecoderRNN):
+                encoder_outputs, encoder_hidden = self._model.encoder(
+                    src_tensor, input_lengths=input_lengths
                 )
-            )
+                initial_decoder_input, decoder_hidden, _ = (
+                    self._model.decoder.initialize_forward(
+                        encoder_hidden=encoder_hidden
+                    )
+                )
+            else:
+                encoder_outputs = self._model.encoder(
+                    src_tensor, src_key_padding_mask=(src_tensor != self._tokenizer.pad_idx).bool()
+                )
+                initial_decoder_input = torch.full(
+                    (1, 1), self._tokenizer.processor.bos_id(), dtype=torch.long
+                ).to(encoder_outputs.device)
+                decoder_hidden = None
+
+
             beams = [{
                 'decoder_input': initial_decoder_input,
                 'decoder_hidden': decoder_hidden,
@@ -159,20 +170,30 @@ class BeamSearchSequenceGenerator(SequenceGenerator):
                                     softmax_scores=True,
                                 )
                             )
-                    elif model_isinstance(self._model, DecoderTransformer):
-                        _, logits  = generate(
-                            model=self._model,
-                            x=decoder_input,
-                            eot_token_id=self._tokenizer.eot_idx,
-                            pad_token_id=self._tokenizer.pad_idx,
-                            top_k=self.beam_width,
-                            max_new_tokens=1,
-                            return_logits=True
-                        )
+                    elif model_isinstance(self._model, EncoderDecoderTransformer) or model_isinstance(self._model, DecoderTransformer):
+                        if model_isinstance(self._model, EncoderDecoderTransformer):
+                            _, logits = self._model.generate(
+                                src=src_tensor,
+                                x=decoder_input,
+                                encoder_out=encoder_outputs,
+                                max_new_tokens=1,
+                                top_k=self.beam_width
+                            )
+
+                        else:
+                            _, logits  = self._model.generate(
+                                x=decoder_input,
+                                eot_token_id=self._tokenizer.eot_idx,
+                                pad_token_id=self._tokenizer.pad_idx,
+                                top_k=self.beam_width,
+                                max_new_tokens=1,
+                                return_logits=True
+                            )
                         probs = F.softmax(logits, dim=-1)
                         topk_indices = torch.nonzero(probs)[:, 1].unsqueeze(0).unsqueeze(0)
                         topk_scores = probs[0][topk_indices[0, 0]].unsqueeze(0).unsqueeze(0)
                         new_decoder_hidden = None
+
                 if torch.any(
                     topk_indices[:, :, : self.beam_width]
                     == self._tokenizer.processor.eos_id()
@@ -193,10 +214,8 @@ class BeamSearchSequenceGenerator(SequenceGenerator):
                     new_score = score + torch.log(topk_scores[:, :, k]).item()
                     if model_isinstance(self._model, EncoderDecoderRNN):
                         new_decoder_input = next_token_id
-                    elif model_isinstance(self._model, DecoderTransformer):
-                        new_decoder_input = torch.cat((decoder_input, next_token_id), dim=1)
                     else:
-                        raise NotImplementedError
+                        new_decoder_input = torch.cat((decoder_input, next_token_id), dim=1)
                     if next_token_id == self._tokenizer.processor.eos_id():
                         all_candidates.append(
                             {

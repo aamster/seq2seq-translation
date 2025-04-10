@@ -12,8 +12,10 @@ class SentencePieceTokenizer:
         model_prefix: str,
         input_path: Optional[str | list[str]] = None,
         vocab_size: Optional[int] = 13000,
+        include_language_tag: bool = False
     ):
         self._processor = spm.SentencePieceProcessor()
+        self._include_language_tag = include_language_tag
         self._options = dict(
             # input spec
             input=input_path,
@@ -90,7 +92,10 @@ class SentencePieceTokenizer:
 
     @property
     def vocab_size(self) -> int:
-        return len(self.vocab) + len(self.language_tag_map)
+        vocab_size = len(self.vocab)
+        if self._include_language_tag:
+            vocab_size += len(self.language_tag_map)
+        return vocab_size
 
     def train(self):
         spm.SentencePieceTrainer.train(**self._options)

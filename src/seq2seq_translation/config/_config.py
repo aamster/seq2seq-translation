@@ -60,6 +60,9 @@ class Config(BaseModel):
     decoder_only: bool = False
     loss_type: LossType = LossType.AUTOENCODE_TRANSLATION
     dtype: str = 'float16'
+    include_language_tag: bool = True
+    use_separate_tokenizer_for_source_target_lang: bool = False
+    add_bos_token: bool = False
 
     class Config:
         extra = "forbid"

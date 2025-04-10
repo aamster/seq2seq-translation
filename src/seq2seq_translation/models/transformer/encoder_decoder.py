@@ -85,20 +85,26 @@ class EncoderDecoderTransformer(nn.Module):
 
     def generate(
         self,
-        x: torch.tensor,
+        src: torch.tensor,
+        x: Optional[torch.tensor] = None,
+        encoder_out: Optional[torch.tensor] = None,
         temperature: float = 1.0,
         top_k: Optional[int] = None,
         max_new_tokens: Optional[int] = None,
     ):
-        src_key_padding_mask = (x != self._pad_token_id).bool()
+        src_key_padding_mask = (src != self._pad_token_id).bool()
 
-        encoder_out = self.encoder(x=x, src_key_padding_mask=src_key_padding_mask)
-        batch_size = x.shape[0]
-        generated_tokens = torch.full(
-            (batch_size, 1), self._sos_token_id, dtype=torch.long
-        ).to(encoder_out.device)
+        if encoder_out is None:
+            encoder_out = self.encoder(x=src, src_key_padding_mask=src_key_padding_mask)
+        batch_size = src.shape[0]
+        if x is None:
+            generated_tokens = torch.full(
+                (batch_size, 1), self._sos_token_id, dtype=torch.long
+            ).to(encoder_out.device)
+        else:
+            generated_tokens = x
 
-        input_len = x.shape[1]
+        input_len = src.shape[1]
         if max_new_tokens is None:
             max_new_tokens = input_len + 50 # from "Attention is all you need"
 
