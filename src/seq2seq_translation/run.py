@@ -213,8 +213,6 @@ def main(config: RNNConfig | TransformerConfig):
                 pad_token_id=source_tokenizer.pad_idx if config.use_separate_tokenizer_for_source_target_lang else tokenizer.pad_idx,
                 source_language_tag_token_id=tokenizer.language_tag_map[config.source_lang] if config.include_language_tag else None,
                 target_language_tag_token_id=tokenizer.language_tag_map[config.target_lang] if config.include_language_tag else None,
-                add_bos_token=config.add_bos_token,
-                bos_token_id=source_tokenizer.processor.bos_id() if config.use_separate_tokenizer_for_source_target_lang else tokenizer.processor.bos_id()
             )
             test_data_loader = DataLoader(
                 dataset=test_dset,

@@ -62,7 +62,6 @@ class Config(BaseModel):
     dtype: str = 'float16'
     include_language_tag: bool = True
     use_separate_tokenizer_for_source_target_lang: bool = False
-    add_bos_token: bool = False
 
     class Config:
         extra = "forbid"
