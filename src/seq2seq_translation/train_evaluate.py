@@ -26,8 +26,12 @@ import evaluate as huggingface_evaluate
 from seq2seq_translation.config._config import LossType
 from seq2seq_translation.inference import SequenceGenerator, BeamSearchSequenceGenerator
 from seq2seq_translation.models.transformer.decoder import DecoderTransformer
-from seq2seq_translation.models.transformer.encoder_decoder import EncoderDecoderTransformer
-from seq2seq_translation.sentence_pairs_dataset import SentencePairsDatasetFromPreprocessedTokens
+from seq2seq_translation.models.transformer.encoder_decoder import (
+    EncoderDecoderTransformer,
+)
+from seq2seq_translation.sentence_pairs_dataset import (
+    SentencePairsDatasetFromPreprocessedTokens,
+)
 from seq2seq_translation.tokenization.sentencepiece_tokenizer import (
     SentencePieceTokenizer,
 )
@@ -39,8 +43,9 @@ from seq2seq_translation.utils.model_util import model_isinstance, unwrap_model
 
 logger.remove()
 
-LOG_LEVEL = os.environ.get('LOG_LEVEL', 'INFO')
+LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO")
 logger.add(sys.stderr, level=LOG_LEVEL)
+
 
 @dataclass
 class LearningRateDecayConfig:
@@ -63,9 +68,10 @@ def _compute_loss(
     C = logits.size(-1)
     if loss_type == LossType.CROSS_ENTROPY:
         loss = F.cross_entropy(
-            logits.view(-1, C), target_tensor.view(-1),
+            logits.view(-1, C),
+            target_tensor.view(-1),
             ignore_index=pad_token_id,
-            label_smoothing=label_smoothing
+            label_smoothing=label_smoothing,
         )
     elif loss_type == LossType.TRANSLATION:
         loss = _compute_translation_loss(
@@ -73,7 +79,7 @@ def _compute_loss(
             target_tensor=target_tensor,
             pad_token_id=pad_token_id,
             eot_token_id=eot_token_id,
-            label_smoothing=label_smoothing
+            label_smoothing=label_smoothing,
         )
     elif loss_type == LossType.AUTOENCODE_TRANSLATION:
         loss = _compute_multi_task_translation_loss(
@@ -83,11 +89,12 @@ def _compute_loss(
             eot_token_id=eot_token_id,
             label_smoothing=label_smoothing,
             max_steps=max_steps,
-            step_num=step_num
+            step_num=step_num,
         )
     else:
-        raise ValueError(f'Unknown loss type {loss_type}')
+        raise ValueError(f"Unknown loss type {loss_type}")
     return loss
+
 
 def _compute_translation_loss(
     logits: torch.tensor,
@@ -100,22 +107,24 @@ def _compute_translation_loss(
     B, T = target_tensor.shape
 
     # Compute the first occurrence of eot in each sequence
-    eot_positions = torch.argmax((target_tensor == eot_token_id).int(), dim=1)  # shape: (B,)
+    eot_positions = torch.argmax(
+        (target_tensor == eot_token_id).int(), dim=1
+    )  # shape: (B,)
 
-    positions = torch.arange(T, device=target_tensor.device).unsqueeze(0)  # shape: (1, T)
+    positions = torch.arange(T, device=target_tensor.device).unsqueeze(
+        0
+    )  # shape: (1, T)
 
-    target_mask = (positions > eot_positions.unsqueeze(1) ).reshape(-1)  # shape: (B*T,)
+    target_mask = (positions > eot_positions.unsqueeze(1)).reshape(-1)  # shape: (B*T,)
 
     logits = logits.reshape(-1, C)[target_mask]
-    targets = target_tensor.reshape(-1) [target_mask]
+    targets = target_tensor.reshape(-1)[target_mask]
 
     loss = F.cross_entropy(
-        logits,
-        targets,
-        ignore_index=pad_token_id,
-        label_smoothing=label_smoothing
+        logits, targets, ignore_index=pad_token_id, label_smoothing=label_smoothing
     )
     return loss
+
 
 def _compute_autoencoding_loss(
     logits: torch.tensor,
@@ -127,14 +136,18 @@ def _compute_autoencoding_loss(
     B, T = target_tensor.shape
 
     # Compute the first occurrence of eot in each sequence
-    eot_positions = torch.argmax((target_tensor == eot_token_id).int(), dim=1)  # shape: (B,)
+    eot_positions = torch.argmax(
+        (target_tensor == eot_token_id).int(), dim=1
+    )  # shape: (B,)
 
-    positions = torch.arange(T, device=target_tensor.device).unsqueeze(0)  # shape: (1, T)
+    positions = torch.arange(T, device=target_tensor.device).unsqueeze(
+        0
+    )  # shape: (1, T)
 
-    target_mask = (positions < eot_positions.unsqueeze(1) ).reshape(-1)  # shape: (B*T,)
+    target_mask = (positions < eot_positions.unsqueeze(1)).reshape(-1)  # shape: (B*T,)
 
     logits = logits.reshape(-1, C)[target_mask]
-    targets = target_tensor.reshape(-1) [target_mask]
+    targets = target_tensor.reshape(-1)[target_mask]
 
     loss = F.cross_entropy(
         logits,
@@ -143,17 +156,19 @@ def _compute_autoencoding_loss(
     )
     return loss
 
+
 def _calc_autoencode_weight(alpha: float, beta: float, step_num: int, max_steps: int):
     beta *= max_steps
     if step_num <= beta:
         # linear decrease from step 0...beta starting from 1...alpha
-        slope = ((alpha - 1) / beta)
+        slope = (alpha - 1) / beta
         intercept = 1
         autoencode_weight = slope * step_num + intercept
     else:
         # linear decrease from alpha...0
         autoencode_weight = alpha * (max_steps - step_num) / (max_steps - beta)
     return autoencode_weight
+
 
 def _compute_multi_task_translation_loss(
     logits: torch.tensor,
@@ -162,8 +177,8 @@ def _compute_multi_task_translation_loss(
     eot_token_id: int,
     max_steps: int,
     step_num: int,
-    autoencode_loss_weight_alpha = 0.1,
-    autoencode_loss_weight_beta = 0.25,
+    autoencode_loss_weight_alpha=0.1,
+    autoencode_loss_weight_beta=0.25,
     label_smoothing: float = 0.0,
 ):
     """
@@ -180,24 +195,25 @@ def _compute_multi_task_translation_loss(
         target_tensor=target_tensor,
         pad_token_id=pad_token_id,
         eot_token_id=eot_token_id,
-        label_smoothing=label_smoothing
+        label_smoothing=label_smoothing,
     )
     l_ae = _compute_autoencoding_loss(
         logits=logits,
         target_tensor=target_tensor,
         pad_token_id=pad_token_id,
-        eot_token_id=eot_token_id
+        eot_token_id=eot_token_id,
     )
 
     autoencode_weight = _calc_autoencode_weight(
         alpha=autoencode_loss_weight_alpha,
         beta=autoencode_loss_weight_beta,
         max_steps=max_steps,
-        step_num=step_num
+        step_num=step_num,
     )
     loss += autoencode_weight * l_ae
 
     return loss
+
 
 def _compute_bleu_score(
     decoded_ids: torch.tensor,
@@ -300,14 +316,25 @@ def estimate_performance_metrics(
             iterator = range(eval_iters)
 
         for eval_iter in iterator:
-            input_tensor, target_tensor, combined_tensor, combined_target_tensor, _, input_lengths = next(data_loader_iter)
+            (
+                input_tensor,
+                target_tensor,
+                combined_tensor,
+                combined_target_tensor,
+                _,
+                input_lengths,
+            ) = next(data_loader_iter)
 
             if torch.cuda.is_available():
                 input_tensor = input_tensor.to(torch.device(os.environ["DEVICE"]))
                 target_tensor = target_tensor.to(torch.device(os.environ["DEVICE"]))
                 if combined_tensor is not None:
-                    combined_tensor = combined_tensor.to(torch.device(os.environ["DEVICE"]))
-                    combined_target_tensor = combined_target_tensor.to(torch.device(os.environ["DEVICE"]))
+                    combined_tensor = combined_tensor.to(
+                        torch.device(os.environ["DEVICE"])
+                    )
+                    combined_target_tensor = combined_target_tensor.to(
+                        torch.device(os.environ["DEVICE"])
+                    )
 
             logits, _, _, decoded_ids = inference(
                 model=model,
@@ -318,27 +345,33 @@ def estimate_performance_metrics(
                 max_new_tokens=max_new_tokens,
                 do_test_time_inference=estimate_bleu and data_loader_name == "val",
                 pad_token_id=val_data_loader.dataset.pad_token_id,
-                eot_token_id=val_loader.dataset.eot_token_id
+                eot_token_id=val_loader.dataset.eot_token_id,
             )
 
             if model_isinstance(m=model, type=EncoderDecoderTransformer):
                 if loss_type != LossType.CROSS_ENTROPY:
-                    logger.warning(f'Setting to {LossType.CROSS_ENTROPY}')
+                    logger.warning(f"Setting to {LossType.CROSS_ENTROPY}")
             loss = _compute_loss(
                 loss_type=loss_type,
                 logits=logits,
-                target_tensor=combined_target_tensor if combined_target_tensor is not None else target_tensor,
+                target_tensor=(
+                    combined_target_tensor
+                    if combined_target_tensor is not None
+                    else target_tensor
+                ),
                 pad_token_id=val_data_loader.dataset.pad_token_id,
                 eot_token_id=val_loader.dataset.eot_token_id,
                 label_smoothing=label_smoothing,
                 max_steps=max_steps,
-                step_num=step_num
+                step_num=step_num,
             )
             local_losses[eval_iter] = loss
 
             if estimate_bleu:
                 bleu_score = _compute_bleu_score(
-                    decoded_ids=decoded_ids, target_tensor=target_tensor, tokenizer=tokenizer
+                    decoded_ids=decoded_ids,
+                    target_tensor=target_tensor,
+                    tokenizer=tokenizer,
                 )
                 local_bleu_scores[eval_iter] = bleu_score
 
@@ -357,8 +390,8 @@ def estimate_performance_metrics(
             avg_loss = local_losses.mean()
         out[data_loader_name] = {"loss": avg_loss, "bleu_score": avg_bleu}
 
-        if data_loader_name == 'val':
-            out['val']['bleu_score'] = avg_bleu
+        if data_loader_name == "val":
+            out["val"]["bleu_score"] = avg_bleu
             if is_master_process():
                 decoded_input, predicted_target, decoded_target, dataset_name = (
                     get_pred(
@@ -369,7 +402,7 @@ def estimate_performance_metrics(
                         idx=torch.randint(
                             low=0, high=len(data_loader.dataset), size=(1,)
                         )[0].item(),
-                        max_new_tokens=max_new_tokens
+                        max_new_tokens=max_new_tokens,
                     )
                 )
                 logger.info(f"dataset: {dataset_name}")
@@ -401,7 +434,9 @@ def train_epoch(
     max_new_inference_tokens: Optional[int] = None,
     label_smoothing: float = 0.0,
 ):
-    scaler = torch.cuda.amp.GradScaler(enabled=torch.get_autocast_gpu_dtype() == torch.float16)
+    scaler = torch.cuda.amp.GradScaler(
+        enabled=torch.get_autocast_gpu_dtype() == torch.float16
+    )
 
     total_loss = 0
     prog_bar = tqdm(
@@ -410,7 +445,14 @@ def train_epoch(
     for epoch_iter, data in enumerate(prog_bar):
         t0 = time.time()
 
-        input_tensor, target_tensor, combined_tensor, combined_target_tensor, _, input_lengths = data
+        (
+            input_tensor,
+            target_tensor,
+            combined_tensor,
+            combined_target_tensor,
+            _,
+            input_lengths,
+        ) = data
         input_tensor: torch.Tensor
         target_tensor: torch.Tensor
 
@@ -460,7 +502,7 @@ def train_epoch(
                     label_smoothing=label_smoothing,
                     step_num=global_iter_num,
                     max_steps=len(train_data_loader) * n_epochs,
-                    loss_type=loss_type
+                    loss_type=loss_type,
                 )
 
             if is_master_process():
@@ -503,28 +545,38 @@ def train_epoch(
         with autocast_context:
             if isinstance(model, EncoderDecoderRNN):
                 logits, decoder_hidden, decoder_attn = model(
-                    x=input_tensor, input_lengths=input_lengths, target_tensor=target_tensor
+                    x=input_tensor,
+                    input_lengths=input_lengths,
+                    target_tensor=target_tensor,
                 )
             else:
                 if model_isinstance(m=model, type=EncoderDecoderTransformer):
                     logits = model(x=input_tensor, targets=target_tensor)
                 elif model_isinstance(m=model, type=DecoderTransformer):
-                    tgt_key_padding_mask = (combined_tensor != val_data_loader.dataset.pad_token_id).bool()
-                    logits = model(x=combined_tensor, tgt_key_padding_mask=tgt_key_padding_mask)
+                    tgt_key_padding_mask = (
+                        combined_tensor != val_data_loader.dataset.pad_token_id
+                    ).bool()
+                    logits = model(
+                        x=combined_tensor, tgt_key_padding_mask=tgt_key_padding_mask
+                    )
                 else:
-                    raise ValueError(f'unknown model {type(model)}')
+                    raise ValueError(f"unknown model {type(model)}")
 
             if combined_target_tensor is not None:
                 target_tensor = combined_target_tensor
 
             if model_isinstance(m=model, type=EncoderDecoderTransformer):
                 if loss_type != LossType.CROSS_ENTROPY:
-                    logger.warning(f'Setting to {LossType.CROSS_ENTROPY}')
+                    logger.warning(f"Setting to {LossType.CROSS_ENTROPY}")
 
             loss = _compute_loss(
                 loss_type=loss_type,
                 logits=logits,
-                target_tensor=combined_target_tensor if combined_target_tensor is not None else target_tensor,
+                target_tensor=(
+                    combined_target_tensor
+                    if combined_target_tensor is not None
+                    else target_tensor
+                ),
                 pad_token_id=val_data_loader.dataset.pad_token_id,
                 eot_token_id=val_data_loader.dataset.eot_token_id,
                 label_smoothing=label_smoothing,
@@ -543,19 +595,26 @@ def train_epoch(
 
         total_loss += loss.item()
 
-        if input_tensor.device.type == 'cuda':
-            torch.cuda.synchronize()    # wait for GPU to finish work
+        if input_tensor.device.type == "cuda":
+            torch.cuda.synchronize()  # wait for GPU to finish work
         t1 = time.time()
 
         if torch.distributed.is_initialized():
-            tokens_processed = torch.tensor(input_lengths, device=input_tensor.device).sum()
-            torch.distributed.all_reduce(tokens_processed, op=torch.distributed.ReduceOp.SUM)
+            tokens_processed = torch.tensor(
+                input_lengths, device=input_tensor.device
+            ).sum()
+            torch.distributed.all_reduce(
+                tokens_processed, op=torch.distributed.ReduceOp.SUM
+            )
         else:
-            tokens_processed = torch.tensor(sum(input_lengths), device=input_tensor.device)
-
+            tokens_processed = torch.tensor(
+                sum(input_lengths), device=input_tensor.device
+            )
 
         if is_master_process():
-            prog_bar.set_postfix_str(f"Iter num {global_iter_num}: loss {loss.item():.4f} tok/sec: {tokens_processed.item()/(t1-t0):.2f}")
+            prog_bar.set_postfix_str(
+                f"Iter num {global_iter_num}: loss {loss.item():.4f} tok/sec: {tokens_processed.item()/(t1-t0):.2f}"
+            )
             prog_bar.update()
 
     return total_loss / len(train_data_loader), best_bleu_score
@@ -567,7 +626,7 @@ def get_pred(
     source_tokenizer: SentencePieceTokenizer,
     target_tokenizer: SentencePieceTokenizer,
     idx: int,
-    max_new_tokens: Optional[int] = None
+    max_new_tokens: Optional[int] = None,
 ):
     input_tensor, target_tensor, _, _, dataset_name = data_loader.dataset[idx]
 
@@ -585,7 +644,7 @@ def get_pred(
         do_test_time_inference=True,
         get_input_logits=False,
         pad_token_id=data_loader.dataset.pad_token_id,
-        eot_token_id=data_loader.dataset.eot_token_id
+        eot_token_id=data_loader.dataset.eot_token_id,
     )
 
     input = source_tokenizer.decode(input_tensor)
@@ -605,11 +664,12 @@ def inference(
     target_tensor: Optional[torch.Tensor] = None,
     max_new_tokens: Optional[int] = None,
     do_test_time_inference: bool = True,
-    get_input_logits: bool = True
- ):
+    get_input_logits: bool = True,
+):
     if isinstance(model, EncoderDecoderRNN):
         logits, decoder_hidden, decoder_attn = model(
-            x=input_tensor, input_lengths=input_lengths,
+            x=input_tensor,
+            input_lengths=input_lengths,
         )
         probs = F.softmax(logits, dim=-1)
         _, topi = probs.topk(1)
@@ -624,17 +684,23 @@ def inference(
                 logits = model(x=input_tensor, targets=target_tensor)
             elif model_isinstance(m=model, type=DecoderTransformer):
                 tgt_key_padding_mask = (combined_tensor != pad_token_id).bool()
-                logits = model(x=combined_tensor, tgt_key_padding_mask=tgt_key_padding_mask)
+                logits = model(
+                    x=combined_tensor, tgt_key_padding_mask=tgt_key_padding_mask
+                )
             else:
                 raise ValueError(
-                    f'unknown model type {type(model_isinstance(m=model))}')
+                    f"unknown model type {type(model_isinstance(m=model))}"
+                )
 
         if do_test_time_inference:
             if model_isinstance(model, DecoderTransformer):
                 decoded_ids = model.generate(
-                    x=input_tensor, top_k=1,
-                    max_new_tokens=max_new_tokens, pad_token_id=pad_token_id,
-                    eot_token_id=eot_token_id)
+                    x=input_tensor,
+                    top_k=1,
+                    max_new_tokens=max_new_tokens,
+                    pad_token_id=pad_token_id,
+                    eot_token_id=eot_token_id,
+                )
             else:
                 raise NotImplementedError
         else:
@@ -680,11 +746,15 @@ def evaluate(
             tokenizer=tokenizer,
         )
         for i in range(len(input_tensor)):
-            if LOG_LEVEL == 'TRACE':
-                if model_isinstance(model,
-                                    EncoderDecoderTransformer) and source_tokenizer is None:
-                    raise ValueError('provide source tokenizer if EncoderDecoderTransformer')
-                logger.trace(f'input: {source_tokenizer.decode(input_tensor)}')
+            if LOG_LEVEL == "TRACE":
+                if (
+                    model_isinstance(model, EncoderDecoderTransformer)
+                    and source_tokenizer is None
+                ):
+                    raise ValueError(
+                        "provide source tokenizer if EncoderDecoderTransformer"
+                    )
+                logger.trace(f"input: {source_tokenizer.decode(input_tensor)}")
 
             pred = sequence_generator.generate(
                 input_tensor=input_tensor[i], input_lengths=[batch_input_lengths[i]]
@@ -732,7 +802,7 @@ def train(
     eval_iters: int = 200,
     label_smoothing: float = 0.0,
     autocast_context: ContextManager = nullcontext(),
-    max_new_inference_tokens: Optional[int] = None
+    max_new_inference_tokens: Optional[int] = None,
 ):
     os.makedirs(model_weights_out_dir, exist_ok=True)
 
@@ -764,7 +834,7 @@ def train(
             max_new_inference_tokens=max_new_inference_tokens,
             tokenizer=tokenizer,
             n_epochs=n_epochs,
-            loss_type=loss_type
+            loss_type=loss_type,
         )
 
 

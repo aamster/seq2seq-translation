@@ -2,15 +2,18 @@ from enum import Enum
 from typing import Optional
 
 from seq2seq_translation.config._config import Config
-from seq2seq_translation.models.transformer.positional_encoding import PositionalEncodingType
+from seq2seq_translation.models.transformer.positional_encoding import (
+    PositionalEncodingType,
+)
 from seq2seq_translation.models.transformer.mlp import ActivationFunction
 
 
 class GPT2Size(Enum):
-    SMALL = 'small'
-    MEDIUM = 'medium'
-    LARGE = 'large'
-    XLARGE = 'xlarge'
+    SMALL = "small"
+    MEDIUM = "medium"
+    LARGE = "large"
+    XLARGE = "xlarge"
+
 
 class TransformerConfig(Config):
     d_model: int = 512

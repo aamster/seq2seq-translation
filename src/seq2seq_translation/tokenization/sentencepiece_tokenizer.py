@@ -12,7 +12,7 @@ class SentencePieceTokenizer:
         model_prefix: str,
         input_path: Optional[str | list[str]] = None,
         vocab_size: Optional[int] = 13000,
-        include_language_tag: bool = False
+        include_language_tag: bool = False,
     ):
         self._processor = spm.SentencePieceProcessor()
         self._include_language_tag = include_language_tag
@@ -74,10 +74,7 @@ class SentencePieceTokenizer:
     @property
     def language_tag_map(self) -> dict[str, int]:
         vocab_size = len(self.vocab)
-        return {
-            'en': vocab_size,
-            'fr': vocab_size + 1
-        }
+        return {"en": vocab_size, "fr": vocab_size + 1}
 
     @property
     def processor(self):
@@ -114,7 +111,17 @@ class SentencePieceTokenizer:
             token_ids = token_ids.reshape(1, -1)
         for tokens in token_ids:
             # ignore language tag
-            tokens = tokens[~(torch.isin(tokens, torch.tensor(list(self.language_tag_map.values()), device=token_ids.device)))]
+            tokens = tokens[
+                ~(
+                    torch.isin(
+                        tokens,
+                        torch.tensor(
+                            list(self.language_tag_map.values()),
+                            device=token_ids.device,
+                        ),
+                    )
+                )
+            ]
 
             decoded.append(self.processor.decode(tokens.tolist()))
         if len(decoded) == 1:

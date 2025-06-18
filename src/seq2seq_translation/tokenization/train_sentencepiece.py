@@ -59,15 +59,17 @@ def main(
     source_vocab_size: int = 20000,
     target_vocab_size: int = 20000,
     vocab_size: int = 20000,
-    train_single_tokenizer: bool = False
+    train_single_tokenizer: bool = False,
 ):
     os.makedirs(model_dir, exist_ok=True)
 
     if train_single_tokenizer:
-        model_prefix = Path(model_dir) / f'{vocab_size}'
+        model_prefix = Path(model_dir) / f"{vocab_size}"
         SentencePieceTokenizer(
-            input_path=[str(Path(datasets_out_dir) / f"{source_lang}.txt"),
-                        str(Path(datasets_out_dir) / f"{target_lang}.txt")],
+            input_path=[
+                str(Path(datasets_out_dir) / f"{source_lang}.txt"),
+                str(Path(datasets_out_dir) / f"{target_lang}.txt"),
+            ],
             vocab_size=vocab_size,
             model_prefix=str(model_prefix),
         )
@@ -78,8 +80,9 @@ def main(
             target_lang=target_lang,
             source_vocab_size=source_vocab_size,
             target_vocab_size=target_vocab_size,
-            model_dir=model_dir
+            model_dir=model_dir,
         )
+
 
 def parse_args():
     parser = ArgumentParser()
@@ -89,10 +92,18 @@ def parse_args():
     parser.add_argument("--model_dir", required=True)
     parser.add_argument("--source_vocab_size", default=20000, type=int)
     parser.add_argument("--target_vocab_size", default=20000, type=int)
-    parser.add_argument("--vocab_size", default=20000, type=int,
-                        help='Vocab size for training a single tokenizer trained on both source and target together')
-    parser.add_argument('--train_single_tokenizer', default=False, action='store_true',
-                        help='Whether to train a single tokenizer on both source and target together')
+    parser.add_argument(
+        "--vocab_size",
+        default=20000,
+        type=int,
+        help="Vocab size for training a single tokenizer trained on both source and target together",
+    )
+    parser.add_argument(
+        "--train_single_tokenizer",
+        default=False,
+        action="store_true",
+        help="Whether to train a single tokenizer on both source and target together",
+    )
 
     args = parser.parse_args()
     return args
@@ -108,5 +119,5 @@ if __name__ == "__main__":
         source_vocab_size=args.source_vocab_size,
         target_vocab_size=args.target_vocab_size,
         vocab_size=args.vocab_size,
-        train_single_tokenizer=args.train_single_tokenizer
+        train_single_tokenizer=args.train_single_tokenizer,
     )

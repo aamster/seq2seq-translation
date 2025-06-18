@@ -54,18 +54,27 @@ class SentencePairsDatasetFromPreprocessedTokens(Dataset):
     def __getitem__(self, idx):
         idx = self._idxs[idx]
 
-        x = self._tokenized[self._tokenized_offsets[idx]:self._tokenized_offsets[idx+1]]
+        x = self._tokenized[
+            self._tokenized_offsets[idx] : self._tokenized_offsets[idx + 1]
+        ]
         x = torch.from_numpy(x.astype(np.int64))
 
         source_end = torch.where(x == self._eot_token_id)[0][0].item()
-        source = x[:source_end+1]
-        target = x[source_end+1:]
+        source = x[: source_end + 1]
+        target = x[source_end + 1 :]
 
         # adding a language tag to denote start of language text per "Language models are good translators", Wang et al
-        x = torch.concatenate([torch.tensor([self._source_language_tag_token_id]), source, torch.tensor([self._target_language_tag_token_id]), target])
+        x = torch.concatenate(
+            [
+                torch.tensor([self._source_language_tag_token_id]),
+                source,
+                torch.tensor([self._target_language_tag_token_id]),
+                target,
+            ]
+        )
 
-        source = x[:source_end+2]
-        target = x[source_end+2:]
+        source = x[: source_end + 2]
+        target = x[source_end + 2 :]
 
         if self._combine_source_and_target:
             combined_target = torch.cat([x[1:], torch.tensor([self._pad_token_id])])
@@ -89,6 +98,8 @@ class SentencePairsDataset(Dataset):
         source_language_tag_token_id: Optional[int] = None,
         target_language_tag_token_id: Optional[int] = None,
         max_length: int = None,
+        add_bos_token_id: bool = False,
+        bos_token_id: Optional[int] = None,
     ):
         """
 
@@ -101,9 +112,17 @@ class SentencePairsDataset(Dataset):
         """
 
         if source_tokenizer and target_tokenizer and combined_tokenizer:
-            raise ValueError('provide either source/target tokenizer or combined tokenizer')
-        if source_tokenizer is None and target_tokenizer is None and combined_tokenizer is None:
-            raise ValueError('provide source/target tokenizer or combined tokenizer')
+            raise ValueError(
+                "provide either source/target tokenizer or combined tokenizer"
+            )
+        if (
+            source_tokenizer is None
+            and target_tokenizer is None
+            and combined_tokenizer is None
+        ):
+            raise ValueError("provide source/target tokenizer or combined tokenizer")
+        if add_bos_token_id and bos_token_id is None:
+            raise ValueError("provide bos_token_id if add_bos_token_id")
         self._datasets = datasets
         self._idxs = idxs
         self._source_tokenizer = source_tokenizer
@@ -116,6 +135,8 @@ class SentencePairsDataset(Dataset):
         self._transform = self._get_transform(max_len=max_length)
         self._eos_token_id = eos_token_id
         self._pad_token_id = pad_token_id
+        self._bos_token_id = bos_token_id
+        self._add_bos_token_id = add_bos_token_id
 
     def __len__(self):
         return len(self._idxs)
@@ -136,17 +157,32 @@ class SentencePairsDataset(Dataset):
             target_ids = self._target_tokenizer.processor.encode(target)
 
         if self._combine_source_and_target:
-            if self._source_language_tag_token_id is not None and self._target_language_tag_token_id is not None:
+            if (
+                self._source_language_tag_token_id is not None
+                and self._target_language_tag_token_id is not None
+            ):
                 # adding a language tag to denote start of language text per "Language models are good translators", Wang et al
-                source = torch.concatenate([torch.tensor([self._source_language_tag_token_id]), self._transform(source_ids)])
-                target = torch.concatenate([torch.tensor([self._target_language_tag_token_id]), self._transform(target_ids)])
+                source = torch.concatenate(
+                    [
+                        torch.tensor([self._source_language_tag_token_id]),
+                        self._transform(source_ids),
+                    ]
+                )
+                target = torch.concatenate(
+                    [
+                        torch.tensor([self._target_language_tag_token_id]),
+                        self._transform(target_ids),
+                    ]
+                )
         else:
             source = self._transform(source_ids)
             target = self._transform(target_ids)
 
         if self._combine_source_and_target:
             combined = torch.cat([source, target])
-            combined_target = torch.cat([combined[1:], torch.tensor([self._pad_token_id])])   # shift 1 to the right
+            combined_target = torch.cat(
+                [combined[1:], torch.tensor([self._pad_token_id])]
+            )  # shift 1 to the right
         else:
             combined = None
             combined_target = None
@@ -163,6 +199,8 @@ class SentencePairsDataset(Dataset):
                 x = x[:max_len]
 
             x.append(self._eos_token_id)
+            if self._add_bos_token_id:
+                x = [self._bos_token_id] + x
             x = torch.tensor(x)
             return x
 

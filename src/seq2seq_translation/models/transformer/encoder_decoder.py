@@ -8,7 +8,9 @@ from torch.nn import functional as F
 from seq2seq_translation.models.transformer.decoder import DecoderTransformer
 from seq2seq_translation.models.transformer.encoder import EncoderTransformer
 from seq2seq_translation.models.transformer.mlp import ActivationFunction
-from seq2seq_translation.models.transformer.positional_encoding import PositionalEncodingType
+from seq2seq_translation.models.transformer.positional_encoding import (
+    PositionalEncodingType,
+)
 
 
 class EncoderDecoderTransformer(nn.Module):
@@ -26,7 +28,7 @@ class EncoderDecoderTransformer(nn.Module):
         feedforward_hidden_dim: int = 2048,
         norm_first: bool = False,
         mlp_activation: ActivationFunction = ActivationFunction.RELU,
-        positional_encoding_type: PositionalEncodingType = PositionalEncodingType.LEARNED
+        positional_encoding_type: PositionalEncodingType = PositionalEncodingType.LEARNED,
     ):
         super().__init__()
 
@@ -41,7 +43,7 @@ class EncoderDecoderTransformer(nn.Module):
             norm_first=norm_first,
             mlp_activation=mlp_activation,
             positional_encoding_type=positional_encoding_type,
-            pad_token_idx=pad_token_id
+            pad_token_idx=pad_token_id,
         )
         self.decoder = DecoderTransformer(
             n_layers=n_layers,
@@ -55,7 +57,7 @@ class EncoderDecoderTransformer(nn.Module):
             norm_first=norm_first,
             mlp_activation=mlp_activation,
             positional_encoding_type=positional_encoding_type,
-            pad_token_idx=pad_token_id
+            pad_token_idx=pad_token_id,
         )
         self._block_size = block_size
         self._sos_token_id = sos_token_id
@@ -91,6 +93,7 @@ class EncoderDecoderTransformer(nn.Module):
         temperature: float = 1.0,
         top_k: Optional[int] = None,
         max_new_tokens: Optional[int] = None,
+        return_cross_attention_weights: bool = False,
     ):
         src_key_padding_mask = (src != self._pad_token_id).bool()
 
@@ -106,9 +109,10 @@ class EncoderDecoderTransformer(nn.Module):
 
         input_len = src.shape[1]
         if max_new_tokens is None:
-            max_new_tokens = input_len + 50 # from "Attention is all you need"
+            max_new_tokens = input_len + 50  # from "Attention is all you need"
 
         all_logits = []
+        all_cross_attention_weights = []
         for _ in range(max_new_tokens):
             # if the sequence context is growing too long we must crop it at block_size
             if generated_tokens.size(1) <= self._block_size:
@@ -117,11 +121,31 @@ class EncoderDecoderTransformer(nn.Module):
                 generated_tokens_cropped = generated_tokens[:, -self._block_size :]
 
             # forward the model to get the logits for the index in the sequence
-            logits = self.decoder(
+            decoder_out = self.decoder(
                 x=generated_tokens_cropped,
                 memory=encoder_out,
                 memory_key_padding_mask=src_key_padding_mask,
+                return_cross_attention_weights=return_cross_attention_weights,
             )
+            if return_cross_attention_weights:
+                logits, attention_weights = decoder_out
+
+                # extract just the new token cross attention
+                if len(all_cross_attention_weights) > 0:
+                    for layer in range(len(attention_weights)):
+                        all_cross_attention_weights[layer] = torch.cat(
+                            [
+                                all_cross_attention_weights[layer],
+                                attention_weights[layer][:, :, -1].unsqueeze(2),
+                            ],
+                            dim=2,
+                        )
+                else:
+                    all_cross_attention_weights += [
+                        x[:, :, -1].unsqueeze(2) for x in attention_weights
+                    ]
+            else:
+                logits = decoder_out
             # pluck the logits at the final step and scale by desired temperature
             logits = logits[:, -1, :] / temperature
             # optionally crop the logits to only the top k options
@@ -140,7 +164,11 @@ class EncoderDecoderTransformer(nn.Module):
             if (next_token == self._eos_token_id).all():
                 break
         logits = torch.cat(all_logits, dim=1)
-        return generated_tokens, logits
+
+        if return_cross_attention_weights:
+            return generated_tokens, logits, all_cross_attention_weights
+        else:
+            return generated_tokens, logits
 
     @property
     def num_params(self, non_embedding: bool = True):

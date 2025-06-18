@@ -5,13 +5,17 @@ from torch import nn
 from torch.nn import LayerNorm
 
 from seq2seq_translation.config.transformer_config import TransformerConfig
-from seq2seq_translation.models.transformer.multi_head_attention import MultiHeadSelfAttention, \
-    MultiHeadCrossAttention
+from seq2seq_translation.models.transformer.multi_head_attention import (
+    MultiHeadSelfAttention,
+    MultiHeadCrossAttention,
+)
 from seq2seq_translation.models.transformer._transformer import _Transformer
 from seq2seq_translation.models.transformer.mlp import MLP, ActivationFunction
 import torch.nn.functional as F
 
-from seq2seq_translation.models.transformer.positional_encoding import PositionalEncodingType
+from seq2seq_translation.models.transformer.positional_encoding import (
+    PositionalEncodingType,
+)
 
 
 class _DecoderBlock(nn.Module):
@@ -23,7 +27,7 @@ class _DecoderBlock(nn.Module):
         use_cross_attention: bool = True,
         feedforward_hidden_dim: int = 2048,
         norm_first: bool = False,
-        mlp_activation: ActivationFunction = ActivationFunction.RELU
+        mlp_activation: ActivationFunction = ActivationFunction.RELU,
     ):
         super().__init__()
         self.masked_multi_head_self_attention = MultiHeadSelfAttention(
@@ -42,8 +46,10 @@ class _DecoderBlock(nn.Module):
             )
 
         self.mlp = MLP(
-            d_model=d_model, dropout=dropout, hidden_dim=feedforward_hidden_dim,
-            activation_function=mlp_activation
+            d_model=d_model,
+            dropout=dropout,
+            hidden_dim=feedforward_hidden_dim,
+            activation_function=mlp_activation,
         )
         self.layer_norm = nn.ModuleList(layer_norms)
         self._use_cross_attention = use_cross_attention
@@ -55,21 +61,31 @@ class _DecoderBlock(nn.Module):
         tgt_key_padding_mask: torch.tensor,
         memory_key_padding_mask: Optional[torch.tensor] = None,
         memory: Optional[torch.tensor] = None,
+        return_cross_attention_weight: bool = False,
     ):
         if self._use_cross_attention:
             if memory is None:
                 raise ValueError("must provide memory to use cross attention")
 
+        cross_attn_weights = None
         if self._norm_first:
             x = x + self.masked_multi_head_self_attention(
-                self.layer_norm[0](x), key_padding_mask=tgt_key_padding_mask, is_causal=True
+                self.layer_norm[0](x),
+                key_padding_mask=tgt_key_padding_mask,
+                is_causal=True,
             )
             if self._use_cross_attention:
-                x = x + self.multi_head_cross_attention(
+                attn_out = self.multi_head_cross_attention(
                     query=self.layer_norm[1](x),
                     key=memory,
                     key_padding_mask=memory_key_padding_mask,
+                    return_attention_weights=return_cross_attention_weight,
                 )
+                if return_cross_attention_weight:
+                    attn_out, cross_attn_weights = attn_out
+                else:
+                    cross_attn_weights = None
+                x = x + attn_out
             x = x + self.mlp(self.layer_norm[2 if self._use_cross_attention else 1](x))
         else:
             x = x + self.masked_multi_head_self_attention(
@@ -77,15 +93,24 @@ class _DecoderBlock(nn.Module):
             )
             x = self.layer_norm[0](x)
             if self._use_cross_attention:
-                x = x + self.multi_head_cross_attention(
+                attn_out = self.multi_head_cross_attention(
                     query=x,
                     key=memory,
                     key_padding_mask=memory_key_padding_mask,
+                    return_attention_weights=return_cross_attention_weight,
                 )
+                if return_cross_attention_weight:
+                    attn_out, cross_attn_weights = attn_out
+                else:
+                    cross_attn_weights = None
+                x = x + attn_out
                 x = self.layer_norm[1](x)
             x = x + self.mlp(x)
             x = self.layer_norm[2 if self._use_cross_attention else 1](x)
-        return x
+        if return_cross_attention_weight:
+            return x, cross_attn_weights
+        else:
+            return x
 
 
 class DecoderTransformer(_Transformer):
@@ -102,7 +127,7 @@ class DecoderTransformer(_Transformer):
         feedforward_hidden_dim: int = 2048,
         norm_first: bool = False,
         mlp_activation: ActivationFunction = ActivationFunction.RELU,
-        positional_encoding_type: PositionalEncodingType = PositionalEncodingType.LEARNED
+        positional_encoding_type: PositionalEncodingType = PositionalEncodingType.LEARNED,
     ):
         super().__init__(
             n_attention_heads=n_attention_heads,
@@ -112,7 +137,7 @@ class DecoderTransformer(_Transformer):
             block_size=block_size,
             dropout=dropout,
             positional_encoding_type=positional_encoding_type,
-            pad_token_idx=pad_token_idx
+            pad_token_idx=pad_token_idx,
         )
         self._use_cross_attention = use_cross_attention
         self.blocks = nn.ModuleList(
@@ -124,7 +149,7 @@ class DecoderTransformer(_Transformer):
                     use_cross_attention=use_cross_attention,
                     feedforward_hidden_dim=feedforward_hidden_dim,
                     norm_first=norm_first,
-                    mlp_activation=mlp_activation
+                    mlp_activation=mlp_activation,
                 )
                 for _ in range(n_layers)
             ]
@@ -142,10 +167,12 @@ class DecoderTransformer(_Transformer):
         memory_key_padding_mask: Optional[torch.tensor] = None,
         tgt_key_padding_mask: Optional[torch.tensor] = None,
         memory: Optional[torch.tensor] = None,
+        return_cross_attention_weights: bool = False,
     ):
         if self._use_cross_attention and memory is None:
             raise ValueError("must provide memory if use_cross_attention")
 
+        cross_attention_weights = []
         x = self._calc_embeddings(x=x)
         for block in self.blocks:
             x = block(
@@ -153,22 +180,30 @@ class DecoderTransformer(_Transformer):
                 memory=memory,
                 memory_key_padding_mask=memory_key_padding_mask,
                 tgt_key_padding_mask=tgt_key_padding_mask,
+                return_cross_attention_weight=return_cross_attention_weights,
             )
+            if return_cross_attention_weights:
+                x, attn_weights = x
+                cross_attention_weights.append(attn_weights)
         x = self.layer_norm(x)
         logits = self.lm_head(x)
-        return logits
+
+        if return_cross_attention_weights:
+            return logits, cross_attention_weights
+        else:
+            return logits
 
     @torch.no_grad()
     def generate(
-            self,
-            x: torch.tensor,
-            eot_token_id: int,
-            pad_token_id: int,
-            include_input: bool = False,
-            temperature: float = 1.0,
-            top_k: Optional[int] = None,
-            max_new_tokens: Optional[int] = None,
-            return_logits: bool = False
+        self,
+        x: torch.tensor,
+        eot_token_id: int,
+        pad_token_id: int,
+        include_input: bool = False,
+        temperature: float = 1.0,
+        top_k: Optional[int] = None,
+        max_new_tokens: Optional[int] = None,
+        return_logits: bool = False,
     ):
         """
         Generates next token predictions for `max_new_tokens` timesteps for a set of examples
@@ -192,10 +227,15 @@ class DecoderTransformer(_Transformer):
             example = example.unsqueeze(0)
 
             res = self._generate_single(
-                x=example, top_k=top_k,
-                max_new_tokens=max_new_tokens, pad_token_id=pad_token_id,
-                eot_token_id=eot_token_id, include_input=include_input, temperature=temperature,
-                return_logits=return_logits)
+                x=example,
+                top_k=top_k,
+                max_new_tokens=max_new_tokens,
+                pad_token_id=pad_token_id,
+                eot_token_id=eot_token_id,
+                include_input=include_input,
+                temperature=temperature,
+                return_logits=return_logits,
+            )
             if return_logits:
                 decoded_ids_, logits_ = res
                 logits.append(logits_)
@@ -203,11 +243,14 @@ class DecoderTransformer(_Transformer):
                 decoded_ids_ = res
             decoded_ids.append(decoded_ids_[0])
 
-        decoded_ids_padded = torch.ones((len(decoded_ids), max([len(x) for x in decoded_ids])),
-                                        dtype=torch.long, device=x.device)
+        decoded_ids_padded = torch.ones(
+            (len(decoded_ids), max([len(x) for x in decoded_ids])),
+            dtype=torch.long,
+            device=x.device,
+        )
         decoded_ids_padded[:] = pad_token_id
         for i in range(len(decoded_ids)):
-            decoded_ids_padded[i, :len(decoded_ids[i])] = decoded_ids[i]
+            decoded_ids_padded[i, : len(decoded_ids[i])] = decoded_ids[i]
         decoded_ids = decoded_ids_padded
 
         if return_logits:
@@ -218,15 +261,15 @@ class DecoderTransformer(_Transformer):
 
     @torch.no_grad()
     def _generate_single(
-            self,
-            x: torch.tensor,
-            eot_token_id: int,
-            pad_token_id: int,
-            include_input: bool = False,
-            temperature: float = 1.0,
-            top_k: Optional[int] = None,
-            max_new_tokens: Optional[int] = None,
-            return_logits: bool = False
+        self,
+        x: torch.tensor,
+        eot_token_id: int,
+        pad_token_id: int,
+        include_input: bool = False,
+        temperature: float = 1.0,
+        top_k: Optional[int] = None,
+        max_new_tokens: Optional[int] = None,
+        return_logits: bool = False,
     ):
         """
         Generates next token predictions for `max_new_tokens` timesteps for a single example
@@ -260,10 +303,7 @@ class DecoderTransformer(_Transformer):
         for i in range(max_new_tokens):
             # forward the model to get the logits for the index in the sequence
             key_padding_mask = (context != pad_token_id).bool()
-            logits = self(
-                x=context,
-                tgt_key_padding_mask=key_padding_mask
-            )
+            logits = self(x=context, tgt_key_padding_mask=key_padding_mask)
             # pluck the logits at the final step and scale by desired temperature
             logits = logits[:, -1, :] / temperature
             # optionally crop the logits to only the top k options
@@ -309,11 +349,12 @@ class DecoderTransformer(_Transformer):
         pad_token_idx: int,
         override_args: Optional[dict] = None,
     ):
-        assert model_type in {'gpt2', 'gpt2-medium', 'gpt2-large', 'gpt2-xl'}
-        override_args = override_args or {} # default to empty dict
+        assert model_type in {"gpt2", "gpt2-medium", "gpt2-large", "gpt2-xl"}
+        override_args = override_args or {}  # default to empty dict
         # only dropout can be overridden see more notes below
-        assert all(k == 'dropout' for k in override_args)
+        assert all(k == "dropout" for k in override_args)
         from transformers import GPT2LMHeadModel
+
         print("loading weights from pretrained gpt: %s" % model_type)
 
         # create a from-scratch initialized minGPT model
@@ -328,11 +369,13 @@ class DecoderTransformer(_Transformer):
             mlp_activation=config.activation,
             use_cross_attention=False,
             positional_encoding_type=config.positional_encoding_type,
-            pad_token_idx=pad_token_idx
+            pad_token_idx=pad_token_idx,
         )
         sd = model.state_dict()
         sd_keys = sd.keys()
-        sd_keys = [k for k in sd_keys if not k.endswith('.attn.bias')] # discard this mask / buffer, not a param
+        sd_keys = [
+            k for k in sd_keys if not k.endswith(".attn.bias")
+        ]  # discard this mask / buffer, not a param
 
         # init a huggingface/transformers model
         model_hf = GPT2LMHeadModel.from_pretrained(model_type)
@@ -340,14 +383,25 @@ class DecoderTransformer(_Transformer):
 
         # copy while ensuring all of the parameters are aligned and match in names and shapes
         sd_keys_hf = sd_hf.keys()
-        sd_keys_hf = [k for k in sd_keys_hf if not k.endswith('.attn.masked_bias')] # ignore these, just a buffer
-        sd_keys_hf = [k for k in sd_keys_hf if not k.endswith('.attn.bias')] # same, just the mask (buffer)
-        transposed = ['attn.c_attn.weight', 'attn.c_proj.weight', 'mlp.c_fc.weight', 'mlp.c_proj.weight']
+        sd_keys_hf = [
+            k for k in sd_keys_hf if not k.endswith(".attn.masked_bias")
+        ]  # ignore these, just a buffer
+        sd_keys_hf = [
+            k for k in sd_keys_hf if not k.endswith(".attn.bias")
+        ]  # same, just the mask (buffer)
+        transposed = [
+            "attn.c_attn.weight",
+            "attn.c_proj.weight",
+            "mlp.c_fc.weight",
+            "mlp.c_proj.weight",
+        ]
         # basically the openai checkpoints use a "Conv1D" module, but we only want to use a vanilla Linear
         # this means that we have to transpose these weights when we import them
 
         keys_map = create_pretrained_to_new_mapping(pretrained_keys=sd_keys_hf)
-        assert len(sd_keys_hf) == len(sd_keys), f"mismatched keys: {len(sd_keys_hf)} != {len(sd_keys)}"
+        assert len(sd_keys_hf) == len(
+            sd_keys
+        ), f"mismatched keys: {len(sd_keys_hf)} != {len(sd_keys)}"
         for k in sd_keys_hf:
             if any(k.endswith(w) for w in transposed):
                 # special treatment for the Conv1D weights we need to transpose
@@ -379,7 +433,7 @@ def map_key(pretrained_key: str) -> str:
         # Split the key into parts.
         # For example, "transformer.h.0.attn.c_attn.weight" becomes:
         # ['transformer', 'h', '0', 'attn', 'c_attn', 'weight']
-        parts = pretrained_key.split('.')
+        parts = pretrained_key.split(".")
         layer = parts[2]  # the block number as a string
         module = parts[3]  # e.g. "ln_1", "attn", "ln_2", "mlp"
 

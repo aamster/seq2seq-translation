@@ -14,7 +14,9 @@ import tiktoken
 
 from seq2seq_translation.data_loading import DataSplitter
 from seq2seq_translation.datasets.datasets import LanguagePairsDatasets
-from seq2seq_translation.tokenization.sentencepiece_tokenizer import SentencePieceTokenizer
+from seq2seq_translation.tokenization.sentencepiece_tokenizer import (
+    SentencePieceTokenizer,
+)
 
 
 @dataclass
@@ -25,7 +27,7 @@ class Config:
     seed: int
     out_dir: Path
     train_frac: float = 0.999
-    tokenizer_type: str = 'tiktoken'
+    tokenizer_type: str = "tiktoken"
     sentence_piece_model_dir: Optional[Path] = None
     max_len: int = 128
     train_n_tokens: Optional[int] = None
@@ -39,6 +41,7 @@ class Config:
 
         if self.sentence_piece_model_dir is not None:
             self.sentence_piece_model_dir = Path(self.sentence_piece_model_dir)
+
 
 def process(source, target, enc: Encoding | SentencePieceTokenizer, max_len: int = 128):
 
@@ -64,15 +67,33 @@ def process(source, target, enc: Encoding | SentencePieceTokenizer, max_len: int
     return combined
 
 
-def tokenize(batch_idx: int, enc: Encoding | SentencePieceTokenizer, datasets, dataset_len: int, batch_size: int = 1024):
+def tokenize(
+    batch_idx: int,
+    enc: Encoding | SentencePieceTokenizer,
+    datasets,
+    dataset_len: int,
+    batch_size: int = 1024,
+):
     start = batch_idx * batch_size
     end = min(start + batch_size, dataset_len)
     batch = [process(*datasets[i][:-1], enc=enc) for i in range(start, end)]
     return batch, batch_idx
 
-def get_num_tokens_parallel(enc, datasets: LanguagePairsDatasets, idxs: np.ndarray, batch_size: int, num_batches: int, num_workers: int):
+
+def get_num_tokens_parallel(
+    enc,
+    datasets: LanguagePairsDatasets,
+    idxs: np.ndarray,
+    batch_size: int,
+    num_batches: int,
+    num_workers: int,
+):
     tokenize_partial = partial(
-        tokenize, enc=enc, datasets=datasets, dataset_len=len(idxs), batch_size=batch_size
+        tokenize,
+        enc=enc,
+        datasets=datasets,
+        dataset_len=len(idxs),
+        batch_size=batch_size,
     )
 
     num_tokens = 0
@@ -89,6 +110,7 @@ def get_num_tokens_parallel(enc, datasets: LanguagePairsDatasets, idxs: np.ndarr
                 pbar.update(1)
     return num_tokens, batch_lens
 
+
 def write_tokens_to_memmap_parallel(
     enc,
     datasets: LanguagePairsDatasets,
@@ -98,13 +120,19 @@ def write_tokens_to_memmap_parallel(
     arr: np.memmap,
     batch_lens: np.ndarray,
     num_workers: int,
-    offsets_out_path: Path
+    offsets_out_path: Path,
 ):
     tokenize_partial = partial(
-        tokenize, enc=enc, datasets=datasets, dataset_len=len(idxs), batch_size=batch_size
+        tokenize,
+        enc=enc,
+        datasets=datasets,
+        dataset_len=len(idxs),
+        batch_size=batch_size,
     )
 
-    offsets = np.memmap(offsets_out_path, dtype=np.uint64, mode='w+', shape=(len(idxs) + 1,))
+    offsets = np.memmap(
+        offsets_out_path, dtype=np.uint64, mode="w+", shape=(len(idxs) + 1,)
+    )
     offsets[0] = 0
 
     with Pool(num_workers) as pool:
@@ -114,7 +142,7 @@ def write_tokens_to_memmap_parallel(
                 arr_batch = np.concatenate(batch)
                 batch_start = batch_lens[:batch_idx].sum()
 
-                arr[batch_start:batch_start + len(arr_batch)] = arr_batch
+                arr[batch_start : batch_start + len(arr_batch)] = arr_batch
 
                 for seq_idx, seq in enumerate(batch):
                     sample_idx = seq_idx + batch_idx * batch_size
@@ -141,14 +169,19 @@ def main(config_path: Path):
     )
     train_idxs, test_idxs = splitter.split()
 
-    if config.tokenizer_type == 'tiktoken':
+    if config.tokenizer_type == "tiktoken":
         enc = tiktoken.get_encoding("gpt2")
     else:
         if config.sentence_piece_model_dir is None:
-            raise ValueError('sentence_piece_model_dir required')
-        enc = SentencePieceTokenizer(model_prefix=str(config.sentence_piece_model_dir / Path(config.sentence_piece_model_dir).name))
+            raise ValueError("sentence_piece_model_dir required")
+        enc = SentencePieceTokenizer(
+            model_prefix=str(
+                config.sentence_piece_model_dir
+                / Path(config.sentence_piece_model_dir).name
+            )
+        )
 
-    for split_name, idxs in (('train', train_idxs), ('val', test_idxs)):
+    for split_name, idxs in (("train", train_idxs), ("val", test_idxs)):
         num_batches = (len(idxs) + config.batch_size - 1) // config.batch_size
 
         if config.train_n_tokens is None and config.val_n_tokens is None:
@@ -158,14 +191,21 @@ def main(config_path: Path):
                 idxs=idxs,
                 batch_size=config.batch_size,
                 num_batches=num_batches,
-                num_workers=config.num_workers
+                num_workers=config.num_workers,
             )
-            np.save(config.out_dir / f'{split_name}_batch_lens.npy', batch_lens)
+            np.save(config.out_dir / f"{split_name}_batch_lens.npy", batch_lens)
         else:
-            num_tokens = config.train_n_tokens if split_name == 'train' else config.val_n_tokens
-        print(f'{split_name} num tokens: {num_tokens}')
+            num_tokens = (
+                config.train_n_tokens if split_name == "train" else config.val_n_tokens
+            )
+        print(f"{split_name} num tokens: {num_tokens}")
 
-        arr = np.memmap(config.out_dir / f'{split_name}.bin', dtype=np.uint16, mode='w+', shape=(num_tokens,))
+        arr = np.memmap(
+            config.out_dir / f"{split_name}.bin",
+            dtype=np.uint16,
+            mode="w+",
+            shape=(num_tokens,),
+        )
 
         arr, offsets = write_tokens_to_memmap_parallel(
             enc=enc,
@@ -174,16 +214,17 @@ def main(config_path: Path):
             batch_size=config.batch_size,
             num_batches=num_batches,
             arr=arr,
-            batch_lens=np.load(config.out_dir / f'{split_name}_batch_lens.npy'),
+            batch_lens=np.load(config.out_dir / f"{split_name}_batch_lens.npy"),
             num_workers=config.num_workers,
-            offsets_out_path=config.out_dir / f"{split_name}_offsets.bin"
+            offsets_out_path=config.out_dir / f"{split_name}_offsets.bin",
         )
 
         arr.flush()
         offsets.flush()
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument('--config_path', required=True)
+    parser.add_argument("--config_path", required=True)
     args = parser.parse_args()
     main(config_path=Path(args.config_path))

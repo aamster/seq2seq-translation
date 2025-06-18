@@ -35,7 +35,9 @@ class CollateFunction:
         self._fixed_length = fixed_length
 
     def __call__(self, batch):
-        src_batch, target_batch, combined_batch, combined_target_batch, dataset_name = zip(*batch)
+        src_batch, target_batch, combined_batch, combined_target_batch, dataset_name = (
+            zip(*batch)
+        )
         src_batch_padded = torch.nn.utils.rnn.pad_sequence(
             src_batch, batch_first=True, padding_value=self._pad_token_id
         )
@@ -53,7 +55,9 @@ class CollateFunction:
                 combined_batch, batch_first=True, padding_value=self._pad_token_id
             )
             combined_target_batch_padded = torch.nn.utils.rnn.pad_sequence(
-                combined_target_batch, batch_first=True, padding_value=self._pad_token_id
+                combined_target_batch,
+                batch_first=True,
+                padding_value=self._pad_token_id,
             )
             # get combined lengths
             src_lengths = [len(x[2]) for x in batch]
@@ -62,12 +66,19 @@ class CollateFunction:
                 combined_batch_padded = F.pad(
                     input=combined_batch_padded,
                     pad=(0, self._fixed_length - combined_batch_padded.shape[1]),
-                    value=self._pad_token_id
+                    value=self._pad_token_id,
                 )
                 combined_target_batch_padded = F.pad(
                     input=combined_target_batch_padded,
                     pad=(0, self._fixed_length - combined_target_batch_padded.shape[1]),
-                    value=self._pad_token_id
+                    value=self._pad_token_id,
                 )
 
-        return src_batch_padded, target_batch_padded, combined_batch_padded, combined_target_batch_padded, dataset_name, src_lengths
+        return (
+            src_batch_padded,
+            target_batch_padded,
+            combined_batch_padded,
+            combined_target_batch_padded,
+            dataset_name,
+            src_lengths,
+        )

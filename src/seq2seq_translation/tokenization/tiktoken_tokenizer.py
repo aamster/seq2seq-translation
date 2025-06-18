@@ -3,7 +3,7 @@ import torch
 
 
 class TikTokenTokenizer:
-    _tokenizer = tiktoken.get_encoding('gpt2')
+    _tokenizer = tiktoken.get_encoding("gpt2")
 
     @property
     def tokenizer(self):

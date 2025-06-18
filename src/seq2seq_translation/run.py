@@ -23,11 +23,17 @@ from seq2seq_translation.inference import (
     GreedySequenceGenerator,
 )
 from seq2seq_translation.models.transformer.decoder import DecoderTransformer
-from seq2seq_translation.models.transformer.encoder_decoder import EncoderDecoderTransformer
+from seq2seq_translation.models.transformer.encoder_decoder import (
+    EncoderDecoderTransformer,
+)
 from seq2seq_translation.models.transformer.mlp import ActivationFunction
-from seq2seq_translation.models.transformer.positional_encoding import PositionalEncodingType
-from seq2seq_translation.sentence_pairs_dataset import SentencePairsDataset, \
-    SentencePairsDatasetFromPreprocessedTokens
+from seq2seq_translation.models.transformer.positional_encoding import (
+    PositionalEncodingType,
+)
+from seq2seq_translation.sentence_pairs_dataset import (
+    SentencePairsDataset,
+    SentencePairsDatasetFromPreprocessedTokens,
+)
 from seq2seq_translation.tokenization.sentencepiece_tokenizer import (
     SentencePieceTokenizer,
 )
@@ -55,9 +61,11 @@ def _fix_model_state_dict(state_dict: dict):
     new_state_dict = OrderedDict()
     for k, v in state_dict.items():
         name = k.replace("module.", "")  # remove `module.` prefix
-        name = name.replace('_orig_mod.', "")
+        name = name.replace("_orig_mod.", "")
 
-        name = name.replace("positional_encoding", "positional_embedding")  # seems this has been renamed
+        name = name.replace(
+            "positional_encoding", "positional_embedding"
+        )  # seems this has been renamed
         new_state_dict[name] = v
     return new_state_dict
 
@@ -65,7 +73,7 @@ def _fix_model_state_dict(state_dict: dict):
 def main(config: RNNConfig | TransformerConfig):
     if isinstance(config, TransformerConfig) and config.from_gpt2_weights:
         if config.gpt_size is None:
-            raise ValueError('specify gpt2 size')
+            raise ValueError("specify gpt2 size")
         if config.gpt_size == GPT2Size.SMALL:
             config.num_layers = 12
             config.n_head = 12
@@ -84,7 +92,6 @@ def main(config: RNNConfig | TransformerConfig):
         config.positional_encoding_type = PositionalEncodingType.LEARNED
         config.fixed_length = 1024
         config.decoder_only = True
-
 
     if not config.evaluate_only and config.weights_out_dir is None:
         raise ValueError("must provide model_weights_out_dir")
@@ -128,53 +135,72 @@ def main(config: RNNConfig | TransformerConfig):
             rng = None
 
         if not config.is_test:
-            train_offsets = np.memmap(config.tokenized_dir / 'train_offsets.bin', dtype=np.uint64)
-            train_tokenized = np.memmap(config.tokenized_dir / 'train.bin', dtype=np.uint16)
+            train_offsets = np.memmap(
+                config.tokenized_dir / "train_offsets.bin", dtype=np.uint64
+            )
+            train_tokenized = np.memmap(
+                config.tokenized_dir / "train.bin", dtype=np.uint16
+            )
 
-            val_offsets = np.memmap(config.tokenized_dir / 'val_offsets.bin', dtype=np.uint64)
-            val_tokenized = np.memmap(config.tokenized_dir / 'val.bin', dtype=np.uint16)
+            val_offsets = np.memmap(
+                config.tokenized_dir / "val_offsets.bin", dtype=np.uint64
+            )
+            val_tokenized = np.memmap(config.tokenized_dir / "val.bin", dtype=np.uint16)
 
             # -1 because it goes until 1 past the last sequence
-            train_idxs = np.arange(len(train_offsets)-1)
+            train_idxs = np.arange(len(train_offsets) - 1)
             rng.shuffle(train_idxs)
 
             # -1 because it goes until 1 past the last sequence
-            test_idxs = np.arange(len(val_offsets)-1)
+            test_idxs = np.arange(len(val_offsets) - 1)
             rng.shuffle(test_idxs)
-
 
         if config.decoder_only:
             if config.tokenizer_type == TokenizerType.SENTENCEPIECE:
                 tokenizer = SentencePieceTokenizer(
-                    model_prefix=str(Path(config.sentence_piece_model_dir) / Path(config.sentence_piece_model_dir).name),
-                    include_language_tag=config.include_language_tag
+                    model_prefix=str(
+                        Path(config.sentence_piece_model_dir)
+                        / Path(config.sentence_piece_model_dir).name
+                    ),
+                    include_language_tag=config.include_language_tag,
                 )
                 eot_token_id = tokenizer.processor.eos_id()
-                logger.info(f'{tokenizer.processor.vocab_size()} tokens')
+                logger.info(f"{tokenizer.processor.vocab_size()} tokens")
             else:
                 tokenizer = TikTokenTokenizer()
                 eot_token_id = tokenizer.tokenizer.eot_token
-                logger.info(f'{tokenizer.vocab_size} vocab size')
+                logger.info(f"{tokenizer.vocab_size} vocab size")
 
         else:
             if config.tokenizer_type == TokenizerType.SENTENCEPIECE:
                 if config.use_separate_tokenizer_for_source_target_lang:
                     source_tokenizer = SentencePieceTokenizer(
-                        model_prefix=str(Path(config.sentence_piece_model_dir) / config.source_lang),
-                        include_language_tag=config.include_language_tag
+                        model_prefix=str(
+                            Path(config.sentence_piece_model_dir) / config.source_lang
+                        ),
+                        include_language_tag=config.include_language_tag,
                     )
                     target_tokenizer = SentencePieceTokenizer(
-                        model_prefix=str(Path(config.sentence_piece_model_dir) / config.target_lang),
-                        include_language_tag=config.include_language_tag
+                        model_prefix=str(
+                            Path(config.sentence_piece_model_dir) / config.target_lang
+                        ),
+                        include_language_tag=config.include_language_tag,
                     )
-                    logger.info(f"source {source_tokenizer.processor.vocab_size()} vocab size")
-                    logger.info(f"target {target_tokenizer.processor.vocab_size()} vocab size")
+                    logger.info(
+                        f"source {source_tokenizer.processor.vocab_size()} vocab size"
+                    )
+                    logger.info(
+                        f"target {target_tokenizer.processor.vocab_size()} vocab size"
+                    )
                     eot_token_id = source_tokenizer.processor.eos_id()
                     tokenizer = None
                 else:
                     tokenizer = SentencePieceTokenizer(
-                        model_prefix=str(Path(config.sentence_piece_model_dir) / Path(config.sentence_piece_model_dir).name),
-                        include_language_tag=config.include_language_tag
+                        model_prefix=str(
+                            Path(config.sentence_piece_model_dir)
+                            / Path(config.sentence_piece_model_dir).name
+                        ),
+                        include_language_tag=config.include_language_tag,
                     )
                     source_tokenizer = None
                     target_tokenizer = None
@@ -185,7 +211,6 @@ def main(config: RNNConfig | TransformerConfig):
                 tokenizer = TikTokenTokenizer()
                 eot_token_id = tokenizer.tokenizer.eot_token
                 logger.info(f"{tokenizer.vocab_size} vocab size")
-
 
         if config.limit is not None:
             train_idxs = train_idxs[: config.limit]
@@ -210,16 +235,34 @@ def main(config: RNNConfig | TransformerConfig):
                 combine_source_and_target=config.decoder_only,
                 max_length=None,
                 eos_token_id=eot_token_id,
-                pad_token_id=source_tokenizer.pad_idx if config.use_separate_tokenizer_for_source_target_lang else tokenizer.pad_idx,
-                source_language_tag_token_id=tokenizer.language_tag_map[config.source_lang] if config.include_language_tag else None,
-                target_language_tag_token_id=tokenizer.language_tag_map[config.target_lang] if config.include_language_tag else None,
+                pad_token_id=(
+                    source_tokenizer.pad_idx
+                    if config.use_separate_tokenizer_for_source_target_lang
+                    else tokenizer.pad_idx
+                ),
+                source_language_tag_token_id=(
+                    tokenizer.language_tag_map[config.source_lang]
+                    if config.include_language_tag
+                    else None
+                ),
+                target_language_tag_token_id=(
+                    tokenizer.language_tag_map[config.target_lang]
+                    if config.include_language_tag
+                    else None
+                ),
             )
             test_data_loader = DataLoader(
                 dataset=test_dset,
                 shuffle=False,
                 sampler=DistributedSampler(test_dset) if config.use_ddp else None,
                 batch_size=config.batch_size,
-                collate_fn=CollateFunction(pad_token_id=source_tokenizer.pad_idx if config.use_separate_tokenizer_for_source_target_lang else tokenizer.pad_idx),
+                collate_fn=CollateFunction(
+                    pad_token_id=(
+                        source_tokenizer.pad_idx
+                        if config.use_separate_tokenizer_for_source_target_lang
+                        else tokenizer.pad_idx
+                    )
+                ),
             )
 
         else:
@@ -230,8 +273,12 @@ def main(config: RNNConfig | TransformerConfig):
                 tokenized=train_tokenized,
                 eot_token_id=eot_token_id,
                 pad_token_id=tokenizer.pad_idx,
-                source_language_tag_token_id=tokenizer.language_tag_map[config.source_lang],
-                target_language_tag_token_id=tokenizer.language_tag_map[config.target_lang]
+                source_language_tag_token_id=tokenizer.language_tag_map[
+                    config.source_lang
+                ],
+                target_language_tag_token_id=tokenizer.language_tag_map[
+                    config.target_lang
+                ],
             )
             val_dset = SentencePairsDatasetFromPreprocessedTokens(
                 idxs=test_idxs,
@@ -240,8 +287,12 @@ def main(config: RNNConfig | TransformerConfig):
                 tokenized=val_tokenized,
                 eot_token_id=eot_token_id,
                 pad_token_id=tokenizer.pad_idx,
-                source_language_tag_token_id=tokenizer.language_tag_map[config.source_lang],
-                target_language_tag_token_id=tokenizer.language_tag_map[config.target_lang]
+                source_language_tag_token_id=tokenizer.language_tag_map[
+                    config.source_lang
+                ],
+                target_language_tag_token_id=tokenizer.language_tag_map[
+                    config.target_lang
+                ],
             )
 
             train_sampler = DistributedSampler(train_dset) if config.use_ddp else None
@@ -249,8 +300,9 @@ def main(config: RNNConfig | TransformerConfig):
                 dataset=train_dset,
                 shuffle=(train_sampler is None),
                 batch_size=config.batch_size,
-                collate_fn=CollateFunction(pad_token_id=tokenizer.pad_idx,
-                                           fixed_length=config.fixed_length),
+                collate_fn=CollateFunction(
+                    pad_token_id=tokenizer.pad_idx, fixed_length=config.fixed_length
+                ),
                 sampler=train_sampler,
                 num_workers=config.num_train_dataloader_num_workers,
                 pin_memory=True,
@@ -327,9 +379,9 @@ def main(config: RNNConfig | TransformerConfig):
                     model = DecoderTransformer.from_pretrained(
                         config=config,
                         vocab_size=tokenizer.vocab_size,
-                        model_type='gpt2',
+                        model_type="gpt2",
                         override_args=dict(dropout=config.dropout),
-                        pad_token_idx=tokenizer.pad_idx
+                        pad_token_idx=tokenizer.pad_idx,
                     ).to(device)
                 else:
                     model = DecoderTransformer(
@@ -343,19 +395,35 @@ def main(config: RNNConfig | TransformerConfig):
                         mlp_activation=config.activation,
                         use_cross_attention=False,
                         positional_encoding_type=config.positional_encoding_type,
-                        pad_token_idx=tokenizer.pad_idx
+                        pad_token_idx=tokenizer.pad_idx,
                     ).to(device)
             else:
                 model = EncoderDecoderTransformer(
                     n_attention_heads=config.n_head,
                     n_layers=config.num_layers,
-                    vocab_size=source_tokenizer.vocab_size if config.use_separate_tokenizer_for_source_target_lang else tokenizer.vocab_size,
+                    vocab_size=(
+                        source_tokenizer.vocab_size
+                        if config.use_separate_tokenizer_for_source_target_lang
+                        else tokenizer.vocab_size
+                    ),
                     d_model=config.d_model,
                     block_size=config.max_input_length,
                     feedforward_hidden_dim=config.feedforward_hidden_dim,
-                    sos_token_id=source_tokenizer.processor.bos_id() if config.use_separate_tokenizer_for_source_target_lang else tokenizer.processor.bos_id(),
-                    eos_token_id=source_tokenizer.processor.eos_id() if config.use_separate_tokenizer_for_source_target_lang else tokenizer.processor.eos_id(),
-                    pad_token_id=source_tokenizer.processor.pad_id() if config.use_separate_tokenizer_for_source_target_lang else tokenizer.processor.pad_id(),
+                    sos_token_id=(
+                        source_tokenizer.processor.bos_id()
+                        if config.use_separate_tokenizer_for_source_target_lang
+                        else tokenizer.processor.bos_id()
+                    ),
+                    eos_token_id=(
+                        source_tokenizer.processor.eos_id()
+                        if config.use_separate_tokenizer_for_source_target_lang
+                        else tokenizer.processor.eos_id()
+                    ),
+                    pad_token_id=(
+                        source_tokenizer.processor.pad_id()
+                        if config.use_separate_tokenizer_for_source_target_lang
+                        else tokenizer.processor.pad_id()
+                    ),
                     norm_first=config.norm_first,
                     mlp_activation=config.activation,
                     positional_encoding_type=config.positional_encoding_type,
@@ -374,25 +442,23 @@ def main(config: RNNConfig | TransformerConfig):
             try:
                 model.load_state_dict(checkpoint["model"])
             except RuntimeError:
-                model.load_state_dict(
-                    _fix_model_state_dict(checkpoint["model"])
-                )
+                model.load_state_dict(_fix_model_state_dict(checkpoint["model"]))
 
             optimizer.load_state_dict(checkpoint["optimizer"])
 
-        logger.info(f'Model num params: {model.num_params / 1e6}M')
+        logger.info(f"Model num params: {model.num_params / 1e6}M")
 
         if config.compile:
-            logger.info('compiling model')
+            logger.info("compiling model")
             model = torch.compile(model)
 
         if config.use_ddp:
             model = DDP(model, device_ids=[distributed_context.ddp_local_rank])
 
         if device.type == "cuda" and config.use_mixed_precision:
-            if config.dtype == 'bfloat16':
+            if config.dtype == "bfloat16":
                 model_dtype = torch.bfloat16
-            elif config.dtype == 'float16':
+            elif config.dtype == "float16":
                 model_dtype = torch.float16
 
             ctx = torch.amp.autocast(device.type, dtype=model_dtype)
@@ -408,7 +474,11 @@ def main(config: RNNConfig | TransformerConfig):
                         data_loader=(
                             test_data_loader if config.is_test else val_data_loader
                         ),
-                        tokenizer=target_tokenizer if config.use_separate_tokenizer_for_source_target_lang else tokenizer,
+                        tokenizer=(
+                            target_tokenizer
+                            if config.use_separate_tokenizer_for_source_target_lang
+                            else tokenizer
+                        ),
                         source_tokenizer=source_tokenizer,
                         sequence_generator_type=(
                             BeamSearchSequenceGenerator
@@ -448,15 +518,17 @@ def main(config: RNNConfig | TransformerConfig):
                 label_smoothing=config.label_smoothing,
                 autocast_context=ctx,
                 max_new_inference_tokens=config.decoder_num_timesteps,
-                loss_type=config.loss_type
+                loss_type=config.loss_type,
             )
 
 
 def _record(main_func, config):
     if config.use_ddp:
         from torch.distributed.elastic.multiprocessing.errors import record
+
         return record(main_func)
     return main_func
+
 
 if __name__ == "__main__":
     parser = ArgumentParser()

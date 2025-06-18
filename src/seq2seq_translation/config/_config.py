@@ -11,21 +11,27 @@ class ModelType(Enum):
 
 
 class TokenizerType(Enum):
-    SENTENCEPIECE = 'sentencepiece'
-    TIKTOKEN = 'tiktoken'
+    SENTENCEPIECE = "sentencepiece"
+    TIKTOKEN = "tiktoken"
+
 
 class LossType(Enum):
-    CROSS_ENTROPY = 'cross_entropy'
-    TRANSLATION = 'translation'
-    AUTOENCODE_TRANSLATION = 'autoencode_translation'
+    CROSS_ENTROPY = "cross_entropy"
+    TRANSLATION = "translation"
+    AUTOENCODE_TRANSLATION = "autoencode_translation"
+
 
 class Config(BaseModel):
     architecture_type: ModelType
     batch_size: int = 128
-    tokenized_dir: Optional[Path] = None    # path to preprocessed tokenized inputs. Only required for train/val
+    tokenized_dir: Optional[Path] = (
+        None  # path to preprocessed tokenized inputs. Only required for train/val
+    )
     tokenizer_type: TokenizerType
-    datasets_dir: Optional[Path] = None # required only for test
-    sentence_piece_model_dir: Optional[Path] = None # required only when using sentencepiece
+    datasets_dir: Optional[Path] = None  # required only for test
+    sentence_piece_model_dir: Optional[Path] = (
+        None  # required only when using sentencepiece
+    )
     n_epochs: Optional[int] = None
     weights_out_dir: Optional[Path] = None
     limit: Optional[int] = None
@@ -35,8 +41,12 @@ class Config(BaseModel):
     load_from_checkpoint_path: Optional[Path] = None
     evaluate_only: bool = False
     min_freq: int = 1
-    source_lang: Optional[str] = "en"   # required only when separating tokenizers and tokenizing on the fly
-    target_lang: Optional[str] = "fr"   # required only when separating tokenizers and tokenizing on the fly
+    source_lang: Optional[str] = (
+        "en"  # required only when separating tokenizers and tokenizing on the fly
+    )
+    target_lang: Optional[str] = (
+        "fr"  # required only when separating tokenizers and tokenizing on the fly
+    )
     train_frac: float = 0.8
     git_commit: Optional[str] = None
     dropout: float = 0.0
@@ -59,7 +69,7 @@ class Config(BaseModel):
     use_mixed_precision: bool = True
     decoder_only: bool = False
     loss_type: LossType = LossType.AUTOENCODE_TRANSLATION
-    dtype: str = 'float16'
+    dtype: str = "float16"
     include_language_tag: bool = True
     use_separate_tokenizer_for_source_target_lang: bool = False
 

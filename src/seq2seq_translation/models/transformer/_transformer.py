@@ -1,7 +1,9 @@
 import torch
 from torch import nn as nn
 
-from seq2seq_translation.models.transformer.positional_encoding import PositionalEncodingType
+from seq2seq_translation.models.transformer.positional_encoding import (
+    PositionalEncodingType,
+)
 
 
 class EmbeddingWithPadding(nn.Embedding):
@@ -35,7 +37,7 @@ class EmbeddingWithPadding(nn.Embedding):
             torch.Tensor: Tensor of embeddings with shape (*indices.shape, d_model).
         """
         # Create a boolean mask for pad tokens.
-        pad_mask = (indices == self.pad_idx)
+        pad_mask = indices == self.pad_idx
 
         # To avoid an out-of-bound error during the lookup,
         # replace pad_idx values with a safe index (e.g. 0).
@@ -51,6 +53,7 @@ class EmbeddingWithPadding(nn.Embedding):
 
         return output
 
+
 class _Transformer(nn.Module):
     def __init__(
         self,
@@ -61,7 +64,7 @@ class _Transformer(nn.Module):
         block_size: int,
         pad_token_idx: int,
         dropout: float = 0.0,
-        positional_encoding_type: PositionalEncodingType = PositionalEncodingType.LEARNED
+        positional_encoding_type: PositionalEncodingType = PositionalEncodingType.LEARNED,
     ):
         super().__init__()
         self._vocab_size = vocab_size
@@ -71,7 +74,9 @@ class _Transformer(nn.Module):
         self._n_attention_heads = n_attention_heads
         self._n_layers = n_layers
 
-        self.embedding = EmbeddingWithPadding(num_embeddings=vocab_size, d_model=d_model, pad_idx=pad_token_idx)
+        self.embedding = EmbeddingWithPadding(
+            num_embeddings=vocab_size, d_model=d_model, pad_idx=pad_token_idx
+        )
         if positional_encoding_type == PositionalEncodingType.LEARNED:
             self.positional_embedding = nn.Embedding(self._block_size, self._d_model)
         else:
@@ -83,7 +88,9 @@ class _Transformer(nn.Module):
         device = x.device
         b, t = x.size()
 
-        tok_emb = self.embedding.calc_embeddings(x)  # token embeddings of shape (b, t, d_model)
+        tok_emb = self.embedding.calc_embeddings(
+            x
+        )  # token embeddings of shape (b, t, d_model)
 
         if self._positional_encoding_type == PositionalEncodingType.LEARNED:
             assert (
@@ -94,10 +101,10 @@ class _Transformer(nn.Module):
             x = tok_emb + pos_emb
         elif self._positional_encoding_type == PositionalEncodingType.SINUSOIDAL:
             pos = torch.arange(0, t, device=device, dtype=tok_emb.dtype)  # shape (t)
-            pos[::2] = torch.sin(pos[::2] / 1e4**(2*pos[::2]/self._d_model))
+            pos[::2] = torch.sin(pos[::2] / 1e4 ** (2 * pos[::2] / self._d_model))
             pos[1::2] = torch.cos(pos[1::2] / 1e4 ** (2 * pos[1::2] / self._d_model))
             x = tok_emb + pos.reshape(-1, 1)
         else:
-            raise ValueError(f'{self._positional_encoding_type} not supported')
+            raise ValueError(f"{self._positional_encoding_type} not supported")
         x = self.dropout(x)
         return x
