@@ -14,7 +14,8 @@ class LanguagePairsDataset(abc.ABC):
         self._out_dir = out_dir
         self._len = None
         self._sample_frac = sample_frac
-        os.makedirs(out_dir, exist_ok=True)
+        if out_dir.is_dir():
+            os.makedirs(out_dir, exist_ok=True)
         self.download()
         self._preprocess_dataset()
         self._source_index, self._target_index = self._index_files()

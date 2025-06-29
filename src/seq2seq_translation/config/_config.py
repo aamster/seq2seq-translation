@@ -28,7 +28,7 @@ class Config(BaseModel):
         None  # path to preprocessed tokenized inputs. Only required for train/val
     )
     tokenizer_type: TokenizerType
-    datasets_dir: Optional[Path] = None  # required only for test
+    dataset_path: Optional[Path] = None  # required only for test
     sentence_piece_model_dir: Optional[Path] = (
         None  # required only when using sentencepiece
     )

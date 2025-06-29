@@ -16,7 +16,7 @@ class LanguagePairsDatasets:
         if is_test:
             self._datasets = [
                 WMT14(
-                    out_dir=out_dir,
+                    data_path=out_dir,
                     source_lang=source_lang,
                     target_lang=target_lang,
                     split="test",
@@ -25,7 +25,7 @@ class LanguagePairsDatasets:
         else:
             self._datasets = [
                 WMT14(
-                    out_dir=out_dir,
+                    data_path=out_dir,
                     source_lang=source_lang,
                     target_lang=target_lang,
                     split="train",

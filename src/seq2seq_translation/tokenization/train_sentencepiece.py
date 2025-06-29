@@ -23,7 +23,7 @@ def train_source_and_target_tokenizers_separately(
     :return:
     """
     wmt14 = WMT14(
-        out_dir=Path(datasets_out_dir),
+        data_path=Path(datasets_out_dir),
         source_lang=source_lang,
         target_lang=target_lang,
         split="train",

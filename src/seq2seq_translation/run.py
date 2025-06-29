@@ -166,6 +166,8 @@ def main(config: RNNConfig | TransformerConfig):
                 )
                 eot_token_id = tokenizer.processor.eos_id()
                 logger.info(f"{tokenizer.processor.vocab_size()} tokens")
+                source_tokenizer = tokenizer
+                target_tokenizer = None
             else:
                 tokenizer = TikTokenTokenizer()
                 eot_token_id = tokenizer.tokenizer.eot_token
@@ -220,7 +222,7 @@ def main(config: RNNConfig | TransformerConfig):
 
         if config.is_test:
             test_datasets = LanguagePairsDatasets(
-                out_dir=Path(config.datasets_dir),
+                out_dir=Path(config.dataset_path),
                 source_lang=config.source_lang,
                 target_lang=config.target_lang,
                 is_test=True,

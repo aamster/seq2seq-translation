@@ -21,17 +21,18 @@ sys.path.pop(0)
 
 class WMT14(LanguagePairsDataset):
     def __init__(
-        self, out_dir: str | Path, source_lang: str, target_lang: str, split: str
+        self, data_path: str | Path, source_lang: str, target_lang: str, split: str
     ):
         self._source_lang = source_lang
         self._target_lang = target_lang
         self._ds = None
         self._split = split
-        self._source_path = Path(out_dir) / f"{self._source_lang}.txt"
-        self._target_path = Path(out_dir) / f"{self._target_lang}.txt"
-        self._index_path = Path(out_dir) / f"indexes.json"
+        self._source_path = Path(data_path) / f"{self._source_lang}.txt"
+        self._target_path = Path(data_path) / f"{self._target_lang}.txt"
+        self._index_path = Path(data_path) / f"indexes.json"
         self._streaming = split != "test"
-        super().__init__(out_dir=out_dir, sample_frac=None)
+        self._data_path = data_path
+        super().__init__(out_dir=data_path, sample_frac=None)
 
     def download(self):
         ds_name = (
@@ -39,13 +40,18 @@ class WMT14(LanguagePairsDataset):
             if self._target_lang == "en"
             else f"{self._target_lang}-{self._source_lang}"
         )
-        self._ds = load_dataset(
-            "wmt/wmt14",
-            ds_name,
-            split=self._split,
-            cache_dir=str(self._out_dir),
-            streaming=self._streaming,
-        )
+        if self._split != "test":
+            self._ds = load_dataset(
+                path="wmt/wmt14",
+                name=ds_name,
+                split=self._split,
+                cache_dir=str(self._out_dir),
+                streaming=self._streaming,
+            )
+        else:
+            self._ds = load_dataset("arrow", data_files=str(self._data_path),
+                                    split="train" # ?
+                                    )
 
     def write_to_single_file(self):
         if self._source_path.exists() and self._target_path.exists():
@@ -97,7 +103,10 @@ class WMT14(LanguagePairsDataset):
                 return index["source"], index["target"]
 
     def __len__(self):
-        return self._ds.info.splits[self._split].num_examples
+        if self._split == "test":
+            return self._ds.num_rows
+        else:
+            return self._ds.info.splits[self._split].num_examples
 
     def __getitem__(self, idx):
         if self._split == "test":
