@@ -743,7 +743,7 @@ def evaluate(
 
         bleu = huggingface_evaluate.load("bleu")
 
-        if isinstance(sequence_generator_type, BeamSearchSequenceGenerator):
+        if sequence_generator_type is BeamSearchSequenceGenerator:
             kwargs = {'length_penalty': beam_search_length_penalty}
         else:
             kwargs = {}

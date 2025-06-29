@@ -80,7 +80,7 @@ class BeamSearchSequenceGenerator(SequenceGenerator):
         source_tokenizer: Optional[SentencePieceTokenizer] = None,
         beam_width=4,
         max_length=72,
-        length_penalty=1.0,
+        length_penalty=0.0,
     ):
         super().__init__(model=model, tokenizer=tokenizer)
         self.beam_width = beam_width
