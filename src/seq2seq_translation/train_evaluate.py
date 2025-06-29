@@ -39,6 +39,7 @@ from seq2seq_translation.models.rnn import (
     EncoderDecoderRNN,
 )
 from seq2seq_translation.utils.ddp_utils import is_master_process
+from seq2seq_translation.utils.logging import ProgressLogger
 from seq2seq_translation.utils.model_util import model_isinstance, unwrap_model
 
 logger.remove()
@@ -730,9 +731,9 @@ def evaluate(
     input_lengths = []
     idx = 0
 
-    for batch_idx, data in tqdm(
-        enumerate(data_loader), total=len(data_loader), desc="eval"
-    ):
+    logger.info("Evaluating")
+    progress_logger = ProgressLogger(total=len(data_loader.dataset), log_every=1)
+    for batch_idx, data in enumerate(data_loader):
         input_tensor, target_tensor, _, _, _, batch_input_lengths = data
 
         if torch.cuda.is_available():
@@ -779,6 +780,7 @@ def evaluate(
             decoded_sentences.append(pred)
             targets.append(target)
             idx += 1
+            progress_logger.log_progress()
 
     model.train()
 
