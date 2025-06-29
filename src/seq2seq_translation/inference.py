@@ -21,7 +21,7 @@ from seq2seq_translation.tokenization.sentencepiece_tokenizer import (
 )
 from loguru import logger
 
-from seq2seq_translation.utils.model_util import model_isinstance
+from seq2seq_translation.utils.model_util import model_isinstance, unwrap_model
 
 logger.remove()
 
@@ -80,11 +80,13 @@ class BeamSearchSequenceGenerator(SequenceGenerator):
         source_tokenizer: Optional[SentencePieceTokenizer] = None,
         beam_width=4,
         max_length=72,
+        length_penalty=1.0,
     ):
         super().__init__(model=model, tokenizer=tokenizer)
         self.beam_width = beam_width
         self.max_length = max_length
         self._source_tokenizer = source_tokenizer
+        self._length_penalty = length_penalty
 
     def generate(self, input_tensor: torch.tensor, input_lengths: list[int]):
         src_tensor = input_tensor.unsqueeze(0)
@@ -199,7 +201,7 @@ class BeamSearchSequenceGenerator(SequenceGenerator):
                             )
 
                         else:
-                            _, logits = self._model.generate(
+                            _, logits = unwrap_model(self._model).generate(
                                 x=decoder_input,
                                 eot_token_id=self._tokenizer.eot_idx,
                                 pad_token_id=self._tokenizer.pad_idx,
@@ -233,7 +235,7 @@ class BeamSearchSequenceGenerator(SequenceGenerator):
                     new_decoded_sequence = torch.cat(
                         [decoded_sequence, next_token_id], dim=1
                     )
-                    new_score = score + torch.log(topk_scores[:, :, k]).item()
+                    new_score = score + torch.log(topk_scores[:, :, k]).item() / len(new_decoded_sequence) ** self._length_penalty
                     if model_isinstance(self._model, EncoderDecoderRNN):
                         new_decoder_input = next_token_id
                     else:

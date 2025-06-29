@@ -722,6 +722,7 @@ def evaluate(
     tokenizer: SentencePieceTokenizer,
     source_tokenizer: Optional[SentencePieceTokenizer] = None,
     sequence_generator_type: Type[SequenceGenerator] = BeamSearchSequenceGenerator,
+    beam_search_length_penalty: float = 1.0
 ):
     model.eval()
 
@@ -742,9 +743,14 @@ def evaluate(
 
         bleu = huggingface_evaluate.load("bleu")
 
+        if isinstance(sequence_generator_type, BeamSearchSequenceGenerator):
+            kwargs = {'length_penalty': beam_search_length_penalty}
+        else:
+            kwargs = {}
         sequence_generator = sequence_generator_type(
             model=model,
             tokenizer=tokenizer,
+            **kwargs
         )
         for i in range(len(input_tensor)):
             if LOG_LEVEL == "TRACE":

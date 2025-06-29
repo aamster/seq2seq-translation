@@ -487,6 +487,7 @@ def main(config: RNNConfig | TransformerConfig):
                             if config.eval_sequence_generator_type == "beam search"
                             else GreedySequenceGenerator
                         ),
+                        beam_search_length_penalty=config.beam_search_length_penalty,
                     )
                 )
             print(f"bleu: {val_bleu}")

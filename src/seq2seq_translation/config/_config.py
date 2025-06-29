@@ -72,6 +72,7 @@ class Config(BaseModel):
     dtype: str = "float16"
     include_language_tag: bool = True
     use_separate_tokenizer_for_source_target_lang: bool = False
+    beam_search_length_penalty: float = 1.0
 
     class Config:
         extra = "forbid"
