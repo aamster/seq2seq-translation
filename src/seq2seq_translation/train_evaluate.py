@@ -773,6 +773,7 @@ def evaluate(
                     smooth=True,
                     tokenizer=tokenizer.processor.encode,
                 )["bleu"]
+                logger.info(f'bleu score: {bleu_score:.4f}')
             except ZeroDivisionError:
                 bleu_score = 0
             bleu_scores.append(bleu_score)
