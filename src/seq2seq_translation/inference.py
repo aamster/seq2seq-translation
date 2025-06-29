@@ -235,7 +235,8 @@ class BeamSearchSequenceGenerator(SequenceGenerator):
                     new_decoded_sequence = torch.cat(
                         [decoded_sequence, next_token_id], dim=1
                     )
-                    new_score = score + torch.log(topk_scores[:, :, k]).item() / len(new_decoded_sequence) ** self._length_penalty
+                    new_score = score + torch.log(topk_scores[:, :, k]).item()
+                    new_score /= len(new_decoded_sequence) ** self._length_penalty
                     if model_isinstance(self._model, EncoderDecoderRNN):
                         new_decoder_input = next_token_id
                     else:

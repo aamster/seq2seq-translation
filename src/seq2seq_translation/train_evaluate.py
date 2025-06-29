@@ -733,7 +733,12 @@ def evaluate(
     idx = 0
 
     logger.info("Evaluating")
-    progress_logger = ProgressLogger(total=len(data_loader.dataset), log_every=1)
+    if torch.distributed.is_initialized():
+        total_examples = len(data_loader.sampler)
+    else:
+        total_examples = len(data_loader.dataset)
+
+    progress_logger = ProgressLogger(total=total_examples, log_every=1)
     for batch_idx, data in enumerate(data_loader):
         input_tensor, target_tensor, _, _, _, batch_input_lengths = data
 
