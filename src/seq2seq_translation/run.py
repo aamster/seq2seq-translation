@@ -222,7 +222,7 @@ def main(config: RNNConfig | TransformerConfig):
 
         if config.is_test:
             test_datasets = LanguagePairsDatasets(
-                out_dir=Path(config.dataset_path),
+                data_path=Path(config.dataset_path),
                 source_lang=config.source_lang,
                 target_lang=config.target_lang,
                 is_test=True,

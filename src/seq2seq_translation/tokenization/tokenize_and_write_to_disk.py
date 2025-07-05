@@ -158,7 +158,7 @@ def main(config_path: Path):
     os.makedirs(config.out_dir, exist_ok=True)
 
     datasets = LanguagePairsDatasets(
-        out_dir=Path(config.datasets_dir),
+        data_path=Path(config.datasets_dir),
         source_lang=config.source_lang,
         target_lang=config.target_lang,
         is_test=False,

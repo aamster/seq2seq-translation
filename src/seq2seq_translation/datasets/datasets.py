@@ -11,12 +11,12 @@ class LanguagePairsDatasets:
     """Collection of `LanguagePairsDataset`"""
 
     def __init__(
-        self, out_dir: Path, source_lang: str, target_lang: str, is_test: bool = False
+        self, data_path: Path, source_lang: str, target_lang: str, is_test: bool = False
     ):
         if is_test:
             self._datasets = [
                 WMT14(
-                    data_path=out_dir,
+                    data_path=data_path,
                     source_lang=source_lang,
                     target_lang=target_lang,
                     split="test",
@@ -25,7 +25,7 @@ class LanguagePairsDatasets:
         else:
             self._datasets = [
                 WMT14(
-                    data_path=out_dir,
+                    data_path=data_path,
                     source_lang=source_lang,
                     target_lang=target_lang,
                     split="train",

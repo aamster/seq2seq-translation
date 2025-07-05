@@ -62,36 +62,54 @@ class _DecoderBlock(nn.Module):
         memory_key_padding_mask: Optional[torch.tensor] = None,
         memory: Optional[torch.tensor] = None,
         return_cross_attention_weight: bool = False,
+        return_self_attention_weight: bool = False,
     ):
+        if return_cross_attention_weight and return_self_attention_weight:
+            raise ValueError(
+                "can't return both cross and self attention weights at once"
+            )
         if self._use_cross_attention:
             if memory is None:
                 raise ValueError("must provide memory to use cross attention")
 
         cross_attn_weights = None
         if self._norm_first:
-            x = x + self.masked_multi_head_self_attention(
+            self_attn_out = self.masked_multi_head_self_attention(
                 self.layer_norm[0](x),
                 key_padding_mask=tgt_key_padding_mask,
                 is_causal=True,
+                return_attention_weights=return_self_attention_weight,
             )
+            if return_self_attention_weight:
+                self_attn_out, self_attn_weights = self_attn_out
+            else:
+                self_attn_weights = None
+            x = x + self_attn_out
+
             if self._use_cross_attention:
-                attn_out = self.multi_head_cross_attention(
+                cross_attn_out = self.multi_head_cross_attention(
                     query=self.layer_norm[1](x),
                     key=memory,
                     key_padding_mask=memory_key_padding_mask,
                     return_attention_weights=return_cross_attention_weight,
                 )
                 if return_cross_attention_weight:
-                    attn_out, cross_attn_weights = attn_out
+                    cross_attn_out, cross_attn_weights = cross_attn_out
                 else:
                     cross_attn_weights = None
-                x = x + attn_out
+                x = x + cross_attn_out
             x = x + self.mlp(self.layer_norm[2 if self._use_cross_attention else 1](x))
         else:
-            x = x + self.masked_multi_head_self_attention(
+            self_attn_out = self.masked_multi_head_self_attention(
                 x, key_padding_mask=tgt_key_padding_mask, is_causal=True
             )
+            if return_self_attention_weight:
+                self_attn_out, self_attn_weights = self_attn_out
+            else:
+                self_attn_weights = None
+            x = x + self_attn_out
             x = self.layer_norm[0](x)
+
             if self._use_cross_attention:
                 attn_out = self.multi_head_cross_attention(
                     query=x,
@@ -109,6 +127,8 @@ class _DecoderBlock(nn.Module):
             x = self.layer_norm[2 if self._use_cross_attention else 1](x)
         if return_cross_attention_weight:
             return x, cross_attn_weights
+        elif return_self_attention_weight:
+            return x, self_attn_weights
         else:
             return x
 
@@ -168,11 +188,18 @@ class DecoderTransformer(_Transformer):
         tgt_key_padding_mask: Optional[torch.tensor] = None,
         memory: Optional[torch.tensor] = None,
         return_cross_attention_weights: bool = False,
+        return_self_attention_weights: bool = False,
     ):
         if self._use_cross_attention and memory is None:
             raise ValueError("must provide memory if use_cross_attention")
 
+        if return_cross_attention_weights and return_self_attention_weights:
+            raise ValueError(
+                "can't return both cross and self attention weights at once"
+            )
         cross_attention_weights = []
+        self_attention_weights = []
+
         x = self._calc_embeddings(x=x)
         for block in self.blocks:
             x = block(
@@ -181,15 +208,21 @@ class DecoderTransformer(_Transformer):
                 memory_key_padding_mask=memory_key_padding_mask,
                 tgt_key_padding_mask=tgt_key_padding_mask,
                 return_cross_attention_weight=return_cross_attention_weights,
+                return_self_attention_weight=return_self_attention_weights,
             )
             if return_cross_attention_weights:
-                x, attn_weights = x
-                cross_attention_weights.append(attn_weights)
+                x, cross_attn_weights = x
+                cross_attention_weights.append(cross_attn_weights)
+            elif return_self_attention_weights:
+                x, self_attn_weights = x
+                self_attention_weights.append(self_attn_weights)
         x = self.layer_norm(x)
         logits = self.lm_head(x)
 
         if return_cross_attention_weights:
             return logits, cross_attention_weights
+        elif return_self_attention_weights:
+            return logits, self_attention_weights
         else:
             return logits
 
@@ -204,6 +237,7 @@ class DecoderTransformer(_Transformer):
         top_k: Optional[int] = None,
         max_new_tokens: Optional[int] = None,
         return_logits: bool = False,
+        return_attention_weights: bool = False,
     ):
         """
         Generates next token predictions for `max_new_tokens` timesteps for a set of examples
@@ -216,10 +250,13 @@ class DecoderTransformer(_Transformer):
         :param top_k:
         :param max_new_tokens:
         :param return_logits:
+        :param return_attention_weights:
         :return:
         """
         decoded_ids = []
         logits = []
+        attention_weights = []
+
         for example in x:
             # exclude padding
             example = example[example != pad_token_id]
@@ -235,10 +272,14 @@ class DecoderTransformer(_Transformer):
                 include_input=include_input,
                 temperature=temperature,
                 return_logits=return_logits,
+                return_attention_weights=return_attention_weights,
             )
             if return_logits:
                 decoded_ids_, logits_ = res
                 logits.append(logits_)
+            elif return_attention_weights:
+                decoded_ids_, attention_weights_ = res
+                attention_weights.append(attention_weights_)
             else:
                 decoded_ids_ = res
             decoded_ids.append(decoded_ids_[0])
@@ -256,6 +297,8 @@ class DecoderTransformer(_Transformer):
         if return_logits:
             logits = torch.concatenate(logits)
             return decoded_ids, logits
+        elif return_attention_weights:
+            return decoded_ids, attention_weights
         else:
             return decoded_ids
 
@@ -270,6 +313,7 @@ class DecoderTransformer(_Transformer):
         top_k: Optional[int] = None,
         max_new_tokens: Optional[int] = None,
         return_logits: bool = False,
+        return_attention_weights: bool = False,
     ):
         """
         Generates next token predictions for `max_new_tokens` timesteps for a single example
@@ -288,6 +332,8 @@ class DecoderTransformer(_Transformer):
         :param return_logits:
         :return:
         """
+        attention_weights = None
+
         if include_input:
             generated_tokens = torch.tensor(x, dtype=torch.long).to(x.device)
         else:
@@ -303,7 +349,14 @@ class DecoderTransformer(_Transformer):
         for i in range(max_new_tokens):
             # forward the model to get the logits for the index in the sequence
             key_padding_mask = (context != pad_token_id).bool()
-            logits = self(x=context, tgt_key_padding_mask=key_padding_mask)
+            decoder_out = self(x=context, tgt_key_padding_mask=key_padding_mask,
+                               return_self_attention_weights=return_attention_weights)
+
+            if return_attention_weights:
+                logits, attention_weights = decoder_out
+            else:
+                logits = decoder_out
+
             # pluck the logits at the final step and scale by desired temperature
             logits = logits[:, -1, :] / temperature
             # optionally crop the logits to only the top k options
@@ -323,6 +376,8 @@ class DecoderTransformer(_Transformer):
                 break
         if return_logits:
             return generated_tokens, torch.cat(all_logits, dim=1)
+        elif return_attention_weights:
+            return generated_tokens, attention_weights
         else:
             return generated_tokens
 
