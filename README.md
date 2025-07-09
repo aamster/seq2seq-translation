@@ -44,8 +44,6 @@ This uses an out of sample example from the article to test on!!
 
 ## Translation using deep neural networks - Transformer (part 2)
 
-The dataset is the same as the previous post
-
 ### encoder-decoder:
 
 [Trained model weights](https://drive.google.com/drive/folders/1KFQr6TCHpHWXJNQGzGFDLuL-lVeEH4wa)
